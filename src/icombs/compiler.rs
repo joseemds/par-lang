@@ -9,7 +9,7 @@ use crate::par::{
     types::Type,
 };
 use crate::{
-    location::Span,
+    location::{Span, Spanning},
     par::{
         program::{CheckedProgram, Definition},
         types::TypeDefs,
