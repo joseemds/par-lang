@@ -257,14 +257,6 @@ impl Spanning for CompileError {
     }
 }
 
-impl CompileError {
-    pub fn message(&self) -> &str {
-        match self {
-            CompileError::MustEndProcess(_) => "process must end",
-        }
-    }
-}
-
 type Pass<Name> = Option<Arc<process::Process<Internal<Name>, ()>>>;
 
 impl<Name: Clone + Hash + Eq> Pattern<Name> {

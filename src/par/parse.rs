@@ -290,12 +290,6 @@ impl Spanning for SyntaxError {
     }
 }
 
-impl SyntaxError {
-    pub fn message(&self) -> &str {
-        "Syntax error."
-    }
-}
-
 pub fn set_miette_hook() {
     _ = miette::set_hook(Box::new(|_| {
         Box::new(

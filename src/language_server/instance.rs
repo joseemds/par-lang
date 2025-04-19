@@ -1,14 +1,10 @@
 use super::io::IO;
 use crate::language_server::data::{semantic_token_modifiers, semantic_token_types};
 use crate::location::{Span, Spanning};
-use crate::par::language::{Internal, Name};
 use crate::par::program::NameWithType;
-use crate::par::types::TypeError;
 use crate::playground::{Checked, Compiled};
-use eframe::egui::RichText;
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
-use tracing_subscriber::fmt::format;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
@@ -105,7 +101,7 @@ impl Instance {
                     return None;
                 }
             }
-            Some(Err(e)) => return None,
+            Some(Err(_)) => return None,
             None => lsp::MarkedString::String("Not compiled".to_string()),
         };
 
@@ -345,7 +341,7 @@ impl Instance {
             });
         }
 
-        for (name, declaration) in &compiled.program.declarations {
+        for (name, _) in &compiled.program.declarations {
             let name_span = name.span();
             semantic_tokens.push(lsp::SemanticToken {
                 delta_line: name_span.start.row as u32,
@@ -357,7 +353,7 @@ impl Instance {
             });
         }
 
-        for (name, definition) in &compiled.program.definitions {
+        for (name, _) in &compiled.program.definitions {
             let name_span = name.span();
             semantic_tokens.push(lsp::SemanticToken {
                 delta_line: name_span.start.row as u32,
