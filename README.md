@@ -24,7 +24,19 @@ It contains **a full guide** of the language and its type system.
 1. Install [Rust and Cargo](https://rustup.rs).
 2. `git clone https://github.com/faiface/par-lang.git`
 3. `cd par-lang`
-4. `cargo run`
+4. `cargo run playground`
+
+### [VSCode extension](https://marketplace.visualstudio.com/items/?itemName=par-lang.par-vscode) & Language Server Protocol
+
+Install the VSCode extension to get syntax highlighting, and a rudimentary LSP support.
+
+[Find the extension here.](https://marketplace.visualstudio.com/items/?itemName=par-lang.par-vscode)
+
+To enable LSP:
+
+1. Build a Par language executable with `cargo build --release`.
+2. Find its path in `./target/release/par-lang`.
+3. Set the extension's setting `par.path` to this path.
 
 ## 💡 [Examples](examples/)
 
