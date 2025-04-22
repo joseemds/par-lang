@@ -122,15 +122,6 @@ pub struct ReadbackState {
 }
 
 impl ReadbackState {
-    pub fn show_readback(&mut self, ui: &mut egui::Ui, prog: Arc<CheckedProgram<Name>>) {
-        ui.vertical(|ui| {
-            self.root_impl.show_message(ui);
-            ui.horizontal(|ui| {
-                self.inner.show_handle(ui, self.root.clone(), prog);
-            });
-        });
-    }
-
     pub fn initialize(
         ui: &mut egui::Ui,
         net: Net,
@@ -162,6 +153,43 @@ impl ReadbackState {
                 type_variables: IndexSet::new(),
             },
         }
+    }
+
+    pub fn show_readback(&mut self, ui: &mut egui::Ui, prog: Arc<CheckedProgram<Name>>) {
+        ui.vertical(|ui| {
+            self.root_impl.show_message(ui);
+            ui.horizontal(|ui| {
+                self.inner.show_handle(ui, self.root.clone(), prog);
+            });
+            ui.separator();
+            self.show_stats(ui);
+        });
+    }
+
+    pub fn show_stats(&self, ui: &mut egui::Ui) {
+        let rewrites = self
+            .root
+            .lock()
+            .unwrap()
+            .net
+            .lock()
+            .unwrap()
+            .rewrites
+            .clone();
+        ui.vertical(|ui| {
+            let row = |ui: &mut Ui, s: &str, n: u64| {
+                ui.horizontal(|ui| {
+                    ui.label(s);
+                    ui.label(RichText::from(n.to_string()).strong());
+                });
+            };
+            row(ui, "Annihilate:", rewrites.annihilate);
+            row(ui, "Commute:", rewrites.commute);
+            row(ui, "Erase:", rewrites.era);
+            row(ui, "Expand:", rewrites.expand);
+            row(ui, "External:", rewrites.ext);
+            row(ui, "Total:", rewrites.total());
+        });
     }
 }
 
