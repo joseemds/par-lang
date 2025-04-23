@@ -177,7 +177,7 @@ impl ReadbackState {
             .rewrites
             .clone();
         ui.vertical(|ui| {
-            let row = |ui: &mut Ui, s: &str, n: u64| {
+            let row = |ui: &mut Ui, s: &str, n: u128| {
                 ui.horizontal(|ui| {
                     ui.label(s);
                     ui.label(RichText::from(n.to_string()).strong());
@@ -189,6 +189,8 @@ impl ReadbackState {
             row(ui, "Expand:", rewrites.expand);
             row(ui, "External:", rewrites.ext);
             row(ui, "Total:", rewrites.total());
+            row(ui, "Busy time (ms):", rewrites.busy_duration.as_millis());
+            row(ui, "Total / s:", rewrites.total_per_second());
         });
     }
 }

@@ -4,6 +4,7 @@
 use std::any::Any;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use indexmap::IndexMap;
 
@@ -167,11 +168,13 @@ impl Clone for Tree {
 
 #[derive(Debug, Default, Clone)]
 pub struct Rewrites {
-    pub commute: u64,
-    pub annihilate: u64,
-    pub era: u64,
-    pub ext: u64,
-    pub expand: u64,
+    pub commute: u128,
+    pub annihilate: u128,
+    pub era: u128,
+    pub ext: u128,
+    pub expand: u128,
+    last_busy_start: Option<Instant>,
+    pub busy_duration: Duration,
 }
 
 impl core::ops::Add<Rewrites> for Rewrites {
@@ -184,13 +187,27 @@ impl core::ops::Add<Rewrites> for Rewrites {
             era: self.era + rhs.era,
             expand: self.expand + rhs.expand,
             ext: self.ext + rhs.ext,
+            last_busy_start: match (self.last_busy_start, rhs.last_busy_start) {
+                (None, None) => None,
+                (Some(t), None) | (None, Some(t)) => Some(t),
+                (Some(t1), Some(t2)) => Some(t1.min(t2)),
+            },
+            busy_duration: self.busy_duration + rhs.busy_duration,
         }
     }
 }
 
 impl Rewrites {
-    pub fn total(&self) -> u64 {
+    pub fn total(&self) -> u128 {
         self.commute + self.annihilate + self.era + self.ext
+    }
+
+    pub fn total_per_second(&self) -> u128 {
+        let micros = self.busy_duration.as_micros();
+        if micros == 0 {
+            return 0;
+        }
+        (self.total() as u128 * 1_000_000) / micros
     }
 }
 
@@ -298,13 +315,24 @@ impl Net {
 
     /// Returns whether a reduction was carried out
     pub fn reduce_one(&mut self) -> bool {
-        //eprintln!("{}\n----------", self.show());
-        if let Some((a, b)) = self.redexes.pop_front() {
+        if self.rewrites.last_busy_start.is_none() {
+            self.rewrites.last_busy_start = Some(Instant::now());
+        }
+
+        let reduced = if let Some((a, b)) = self.redexes.pop_front() {
             self.interact(a, b);
             true
         } else {
             false
+        };
+
+        if !reduced {
+            if let Some(last_busy_start) = self.rewrites.last_busy_start.take() {
+                self.rewrites.busy_duration += last_busy_start.elapsed();
+            }
         }
+
+        reduced
     }
 
     /// Where vars occur in the given tree which already have been linked from the other side, finish linking them.
