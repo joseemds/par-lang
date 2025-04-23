@@ -74,8 +74,8 @@ impl State {
                 _ => unreachable!(),
             }
         }
-        for i in 0..self.next_id {
-            net.vars.insert(i, None);
+        for _ in 0..self.next_id {
+            net.variables.alloc();
         }
         net
     }

@@ -19,7 +19,7 @@ fn uniqueify_vars(mut tree: Tree, new_id: &mut usize) -> (Tree, BTreeMap<usize, 
     (tree, connection_map)
 }
 
-pub fn are_equivalent(net: &mut Net, left: Tree, right: Tree) -> bool {
+/*pub fn are_equivalent(net: &mut Net, left: Tree, right: Tree) -> bool {
     // we first remove all variables from the left and right trees,
     let mut new_id = 0;
     let (left, left_map) = uniqueify_vars(left, &mut new_id);
@@ -63,4 +63,4 @@ pub fn are_equivalent(net: &mut Net, left: Tree, right: Tree) -> bool {
     }
 
     true
-}
+}*/

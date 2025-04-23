@@ -218,10 +218,71 @@ impl Rewrites {
 pub struct Net {
     pub ports: VecDeque<Tree>,
     pub redexes: VecDeque<(Tree, Tree)>,
-    pub vars: BTreeMap<VarId, Option<Tree>>,
-    pub free_vars: Vec<VarId>,
+    pub variables: Variables,
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Variables {
+    vars: Vec<VarState>,
+    free: Vec<VarId>,
+}
+
+#[derive(Debug, Clone)]
+pub enum VarState {
+    Free,
+    Pending,
+    Linked(Tree),
+}
+
+impl Variables {
+    pub fn get(&self, id: VarId) -> Option<&VarState> {
+        self.vars.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: VarId) -> Option<&mut VarState> {
+        self.vars.get_mut(id)
+    }
+
+    pub fn remove(&mut self, id: VarId) -> VarState {
+        match self.vars.get_mut(id) {
+            Some(state) => {
+                self.free.push(id);
+                std::mem::replace(state, VarState::Free)
+            }
+            None => VarState::Free,
+        }
+    }
+
+    pub fn remove_linked(&mut self, id: VarId) -> Result<Tree, &mut VarState> {
+        while self.vars.len() <= id {
+            self.vars.push(VarState::Free);
+        }
+
+        match self.vars.get_mut(id) {
+            Some(state) => match state {
+                VarState::Linked(tree) => {
+                    self.free.push(id);
+                    let tree = std::mem::replace(tree, Tree::Era);
+                    let _ = std::mem::replace(state, VarState::Free);
+                    Ok(tree)
+                }
+                _ => Err(state),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub fn alloc(&mut self) -> VarId {
+        match self.free.pop() {
+            Some(id) => id,
+            None => {
+                self.vars.push(VarState::Free);
+                self.vars.len() - 1
+            }
+        }
+    }
 }
 
 impl Net {
@@ -283,16 +344,8 @@ impl Net {
     }
 
     pub fn freshen_variables(&mut self, net: &mut Net) {
-        let mut package_to_net: BTreeMap<usize, usize> = BTreeMap::new();
-        net.map_vars(&mut |var_id| {
-            if let Some(id) = package_to_net.get(&var_id) {
-                id.clone()
-            } else {
-                let id = self.alloc_var(None);
-                package_to_net.insert(var_id, id);
-                id
-            }
-        });
+        let offset = self.variables.vars.len();
+        net.map_vars(&mut |var_id| var_id + offset);
     }
 
     pub fn dereference_package(&mut self, package: usize) -> Tree {
@@ -308,7 +361,8 @@ impl Net {
         // Now, we have to freshen all variables in the tree
         self.freshen_variables(&mut net);
         self.redexes.append(&mut net.redexes);
-        self.vars.append(&mut net.vars);
+        self.variables.vars.append(&mut net.variables.vars);
+        self.variables.free.append(&mut net.variables.free);
         self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites;
         net.ports.pop_back().unwrap()
     }
@@ -342,14 +396,10 @@ impl Net {
                 self.substitute_tree(a);
                 self.substitute_tree(b);
             }
-            t @ Tree::Var(_) => {
-                let Tree::Var(id) = t else { unreachable!() };
-                if let Some(Some(mut a)) = self.vars.remove(id) {
-                    self.dealloc_var(*id);
+            Tree::Var(id) => {
+                if let Ok(mut a) = self.variables.remove_linked(*id) {
                     self.substitute_tree(&mut a);
-                    *t = a;
-                } else {
-                    self.vars.insert(*id, None);
+                    *tree = a;
                 }
             }
             _ => {}
@@ -361,7 +411,7 @@ impl Net {
             Tree::Con(a, b) => Tree::c(self.substitute_ref(a), self.substitute_ref(b)),
             Tree::Dup(a, b) => Tree::d(self.substitute_ref(a), self.substitute_ref(b)),
             Tree::Var(id) => {
-                if let Some(Some(a)) = self.vars.get(id) {
+                if let Some(VarState::Linked(a)) = self.variables.get(*id) {
                     self.substitute_ref(&a)
                 } else {
                     tree.clone()
@@ -381,20 +431,12 @@ impl Net {
 
     pub fn link(&mut self, a: Tree, b: Tree) {
         if let Tree::Var(id) = a {
-            match self.vars.remove(&id).unwrap_or_else(||{
-                panic!("A variable, with id {id}, was linked to more than twice\n\
-                    This is an internal Par bug, which can be caused by many things, such as incorrectly cloning `Tree`s\n\
-                    This happened while linking\n\
-                    \t{a:?}\nand\n\t{b:?}",
-                )
-
-            }) {
-                Some(a) => {
-                    self.dealloc_var(id);
+            match self.variables.remove_linked(id) {
+                Ok(a) => {
                     self.link(a, b);
                 }
-                None => {
-                    self.vars.insert(id, Some(b));
+                Err(state) => {
+                    *state = VarState::Linked(b);
                 }
             }
         } else if let Tree::Var(id) = b {
@@ -404,40 +446,27 @@ impl Net {
         }
     }
 
-    pub fn alloc_var(&mut self, value: Option<Tree>) -> VarId {
-        let id = match self.free_vars.pop() {
-            Some(i) => i,
-            None => self.vars.len(),
-        };
-        assert!(self.vars.insert(id, value).is_none());
-        id
-    }
-
-    pub fn dealloc_var(&mut self, id: VarId) -> Option<Option<Tree>> {
-        self.free_vars.push(id);
-        self.vars.remove(&id)
-    }
-
     pub fn create_wire(&mut self) -> (Tree, Tree) {
-        let id = self.alloc_var(None);
+        let id = self.variables.alloc();
         (Tree::Var(id), Tree::Var(id))
     }
 
     pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
-        self.ports.iter_mut().for_each(|x| x.map_vars(m));
-        self.redexes.iter_mut().for_each(|(a, b)| {
+        for port in &mut self.ports {
+            port.map_vars(m);
+        }
+        for (a, b) in &mut self.redexes {
             a.map_vars(m);
-            b.map_vars(m)
-        });
-        let vars = core::mem::take(&mut self.vars);
-        self.vars = vars
-            .into_iter()
-            .map(|(mut k, mut v)| {
-                k = m(k);
-                v.as_mut().map(|x| x.map_vars(m));
-                (k, v)
-            })
-            .collect();
+            b.map_vars(m);
+        }
+        for state in &mut self.variables.vars {
+            if let VarState::Linked(tree) = state {
+                tree.map_vars(m);
+            }
+        }
+        for free in &mut self.variables.free {
+            *free = m(*free);
+        }
     }
 
     pub fn map_vars_tree(&mut self, m: &mut impl FnMut(VarId) -> Tree) {
@@ -452,7 +481,7 @@ impl Net {
         use Tree::*;
         match t {
             Var(id) => {
-                if let Some(Some(b)) = self.vars.get(id) {
+                if let Some(VarState::Linked(b)) = self.variables.get(*id) {
                     self.show_tree(b)
                 } else {
                     number_to_string(*id)
@@ -499,9 +528,9 @@ impl Net {
     }
 
     fn assert_no_vicious(&self) {
-        for (var, tree) in self.vars.iter() {
-            if let Some(tree) = tree {
-                self.assert_tree_not_contains(tree, var);
+        for (var, tree) in self.variables.vars.iter().enumerate() {
+            if let VarState::Linked(tree) = tree {
+                self.assert_tree_not_contains(tree, &var);
             }
         }
     }
@@ -516,7 +545,7 @@ impl Net {
                 if id == idx {
                     panic!("Vicious circle detected");
                 }
-                if let Some(Some(tree)) = self.vars.get(id) {
+                if let Some(VarState::Linked(tree)) = self.variables.get(*id) {
                     self.assert_tree_not_contains(tree, idx);
                 }
             }
@@ -573,7 +602,7 @@ impl Net {
                 vec![]
             }
             Tree::Var(idx) => {
-                if let Some(Some(tree)) = self.vars.get(idx) {
+                if let Some(VarState::Linked(tree)) = self.variables.get(*idx) {
                     self.assert_tree_valid(tree)
                 } else {
                     vec![idx.clone()]
