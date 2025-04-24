@@ -302,7 +302,8 @@ async fn test_whole_programs() -> Result<(), String> {
             let def_name = format!("test_{}", idx);
             let def_name = Internal::Original(language::Name {
                 span: Default::default(),
-                string: def_name,
+                modules: vec![],
+                primary: def_name,
             });
             let tree = net
                 .lock()
@@ -313,7 +314,8 @@ async fn test_whole_programs() -> Result<(), String> {
                     let def_name = format!("test_pat_{}", idx);
                     let def_name = Internal::Original(language::Name {
                         span: Default::default(),
-                        string: def_name.into(),
+                        modules: vec![],
+                        primary: def_name.into(),
                     });
                     let tree = net
                         .lock()
