@@ -28,7 +28,8 @@ pub enum TokenKind {
     Quest,
     Link,
 
-    Identifier,
+    LowercaseIdentifier,
+    UppercaseIdentifier,
     Begin,
     Chan,
     Dec,
@@ -87,7 +88,8 @@ impl TokenKind {
             TokenKind::Quest => "?",
             TokenKind::Link => "<>",
 
-            TokenKind::Identifier => "identifier",
+            TokenKind::LowercaseIdentifier => "lower-case identifier",
+            TokenKind::UppercaseIdentifier => "upper-case identifier",
             TokenKind::Begin => "begin",
             TokenKind::Chan => "chan",
             TokenKind::Dec => "dec",
@@ -178,7 +180,13 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                         "telltypes" => TokenKind::Telltypes,
                         "type" => TokenKind::Type,
                         "unfounded" => TokenKind::Unfounded,
-                        _ => TokenKind::Identifier,
+                        raw => {
+                            if raw.starts_with(char::is_uppercase) {
+                                TokenKind::UppercaseIdentifier
+                            } else {
+                                TokenKind::LowercaseIdentifier
+                            }
+                        }
                     };
                     Some((raw, kind))
                 }
@@ -352,7 +360,7 @@ mod test {
 
     #[test]
     fn tok() {
-        let tokens = lex(&mut "({[< ><>]}):abc_123: a\nab");
+        let tokens = lex(&mut "({[< ><>]}):Abc:abc_123: A\n_Ab");
         assert_eq!(
             tokens.iter().map(|x| x.kind).collect::<Vec<_>>(),
             vec![
@@ -366,10 +374,11 @@ mod test {
                 TokenKind::RCurly,
                 TokenKind::RParen,
                 TokenKind::Colon,
-                TokenKind::Identifier,
+                TokenKind::UppercaseIdentifier,
+                TokenKind::LowercaseIdentifier,
                 TokenKind::Colon,
-                TokenKind::Identifier,
-                TokenKind::Identifier,
+                TokenKind::UppercaseIdentifier,
+                TokenKind::LowercaseIdentifier,
             ]
         );
         eprintln!("{:#?}", tokens);
@@ -383,7 +392,7 @@ mod test {
             tokens,
             vec![
                 Token {
-                    kind: TokenKind::Identifier,
+                    kind: TokenKind::LowercaseIdentifier,
                     raw: "abc",
                     span: Span {
                         start: Point {
@@ -399,7 +408,7 @@ mod test {
                     },
                 },
                 Token {
-                    kind: TokenKind::Identifier,
+                    kind: TokenKind::LowercaseIdentifier,
                     raw: "not_a_comment",
                     span: Span {
                         start: Point {

@@ -12,7 +12,8 @@ use indexmap::IndexMap;
 #[derive(Clone, Debug)]
 pub struct Name {
     pub span: Span,
-    pub string: String,
+    pub modules: Vec<String>,
+    pub primary: String,
 }
 
 #[derive(Clone, Debug)]
@@ -164,13 +165,13 @@ pub enum Internal<Name> {
 
 impl Hash for Name {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.string.hash(state)
+        (&self.modules, &self.primary).hash(state);
     }
 }
 
 impl PartialEq for Name {
     fn eq(&self, other: &Self) -> bool {
-        self.string == other.string
+        (&self.modules, &self.primary) == (&other.modules, &other.primary)
     }
 }
 
@@ -178,19 +179,22 @@ impl Eq for Name {}
 
 impl PartialOrd for Name {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.string.partial_cmp(&other.string)
+        (&self.modules, &self.primary).partial_cmp(&(&other.modules, &other.primary))
     }
 }
 
 impl Ord for Name {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.string.cmp(&other.string)
+        (&self.modules, &self.primary).cmp(&(&other.modules, &other.primary))
     }
 }
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.string)
+        for module in &self.modules {
+            write!(f, "{}.", module)?;
+        }
+        write!(f, "{}", self.primary)
     }
 }
 

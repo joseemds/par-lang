@@ -336,7 +336,7 @@ impl Playground {
     ) {
         for (internal_name, _) in &program.definitions {
             if let Internal::Original(name) = internal_name {
-                if ui.button(&name.string).clicked() {
+                if ui.button(format!("{}", name)).clicked() {
                     let ty = compiled
                         .get_type_of(&Internal::Original(name.clone()))
                         .unwrap();
