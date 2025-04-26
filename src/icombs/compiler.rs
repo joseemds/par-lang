@@ -3,8 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use super::net::{Net, Tree};
+use super::{
+    net::{Net, Tree},
+    PrimitiveComb,
+};
 use crate::par::{
+    primitive::Primitive,
     process::{Captures, Command, Expression, Process},
     types::Type,
 };
@@ -567,6 +571,7 @@ impl Compiler {
     fn compile_expression(&mut self, expr: &Expression<Name, Type<Name>>) -> Result<TypedTree> {
         match expr {
             Expression::Reference(_, name, _) => self.instantiate_name(name, false),
+
             Expression::Fork {
                 captures,
                 chan_name,
@@ -579,6 +584,20 @@ impl Compiler {
                 this.compile_process(process)?;
                 Ok(v1)
             }),
+
+            Expression::Primitive(_, value, _) => {
+                let ty = value.get_type();
+                match value {
+                    Primitive::Int(i) => Ok(TypedTree {
+                        tree: Tree::Primitive(PrimitiveComb::Int(*i)),
+                        ty,
+                    }),
+                    Primitive::IntAdd1 => Ok(TypedTree {
+                        tree: Tree::Primitive(PrimitiveComb::IntAdd1),
+                        ty,
+                    }),
+                }
+            }
         }
     }
 

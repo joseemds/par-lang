@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use indexmap::IndexMap;
 
+use super::PrimitiveComb;
+
 pub type VarId = usize;
 
 pub fn number_to_string(mut number: usize) -> String {
@@ -42,6 +44,7 @@ pub enum Tree {
         >,
         Box<dyn Any + Send + Sync>,
     ),
+    Primitive(PrimitiveComb),
 }
 
 impl Tree {
@@ -111,9 +114,8 @@ impl Tree {
     }
 
     pub fn show_with_context(&self, ctx: &mut (BTreeMap<usize, String>, usize)) -> String {
-        use Tree::*;
         match self {
-            Var(id) => {
+            Self::Var(id) => {
                 if let Some(name) = ctx.0.get(id) {
                     name.clone()
                 } else {
@@ -123,19 +125,22 @@ impl Tree {
                     number_to_string(free_var)
                 }
             }
-            Con(a, b) => format!(
+            Self::Con(a, b) => format!(
                 "({} {})",
                 a.show_with_context(ctx),
                 b.show_with_context(ctx)
             ),
-            Dup(a, b) => format!(
+            Self::Dup(a, b) => format!(
                 "[{} {}]",
                 a.show_with_context(ctx),
                 b.show_with_context(ctx)
             ),
-            Era => format!("*"),
-            Package(id) => format!("@{}", id),
-            Ext(_, _) => format!("<ext>"),
+            Self::Era => format!("*"),
+            Self::Package(id) => format!("@{}", id),
+            Self::Ext(_, _) => format!("<ext>"),
+
+            Self::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
+            Self::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
         }
     }
 }
@@ -143,12 +148,13 @@ impl Tree {
 impl core::fmt::Debug for Tree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Tree::Con(a, b) => f.debug_tuple("Con").field(a).field(b).finish(),
-            Tree::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
-            Tree::Era => f.debug_tuple("Era").finish(),
-            Tree::Var(id) => f.debug_tuple("Var").field(id).finish(),
-            Tree::Package(id) => f.debug_tuple("Package").field(id).finish(),
-            Tree::Ext(_, _) => f.debug_tuple("Ext").finish_non_exhaustive(),
+            Self::Con(a, b) => f.debug_tuple("Con").field(a).field(b).finish(),
+            Self::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
+            Self::Era => f.debug_tuple("Era").finish(),
+            Self::Var(id) => f.debug_tuple("Var").field(id).finish(),
+            Self::Package(id) => f.debug_tuple("Package").field(id).finish(),
+            Self::Ext(_, _) => f.debug_tuple("Ext").finish_non_exhaustive(),
+            Self::Primitive(p) => f.debug_tuple("Primitive").field(p).finish(),
         }
     }
 }
@@ -156,12 +162,13 @@ impl core::fmt::Debug for Tree {
 impl Clone for Tree {
     fn clone(&self) -> Self {
         match self {
-            Tree::Con(a, b) => Tree::Con(a.clone(), b.clone()),
-            Tree::Dup(a, b) => Tree::Dup(a.clone(), b.clone()),
-            Tree::Era => Tree::Era,
-            Tree::Var(id) => Tree::Var(id.clone()),
-            Tree::Package(id) => Tree::Package(id.clone()),
-            Tree::Ext(_, _) => panic!("Can't clone `Ext` tree!"),
+            Self::Con(a, b) => Self::Con(a.clone(), b.clone()),
+            Self::Dup(a, b) => Self::Dup(a.clone(), b.clone()),
+            Self::Era => Self::Era,
+            Self::Var(id) => Self::Var(id.clone()),
+            Self::Package(id) => Self::Package(id.clone()),
+            Self::Ext(_, _) => panic!("Can't clone `Ext` tree!"),
+            Self::Primitive(p) => Self::Primitive(p.clone()),
         }
     }
 }
@@ -340,12 +347,14 @@ impl Net {
                 self.interact(a, b);
                 self.rewrites.expand += 1;
             }
+            (Primitive(p), a) | (a, Primitive(p)) => {
+                p.interact(self, a);
+            }
         }
     }
 
-    pub fn freshen_variables(&mut self, net: &mut Net) {
-        let offset = self.variables.vars.len();
-        net.map_vars(&mut |var_id| var_id + offset);
+    pub fn offset_variables(&mut self, offset: usize) {
+        self.map_vars(&mut |var_id| var_id + offset);
     }
 
     pub fn dereference_package(&mut self, package: usize) -> Tree {
@@ -359,7 +368,7 @@ impl Net {
 
     pub fn inject_net(&mut self, mut net: Net) -> Tree {
         // Now, we have to freshen all variables in the tree
-        self.freshen_variables(&mut net);
+        net.offset_variables(self.variables.vars.len());
         self.redexes.append(&mut net.redexes);
         self.variables.vars.append(&mut net.variables.vars);
         self.variables.free.append(&mut net.variables.free);
@@ -478,20 +487,22 @@ impl Net {
     }
 
     pub fn show_tree(&self, t: &Tree) -> String {
-        use Tree::*;
         match t {
-            Var(id) => {
+            Tree::Var(id) => {
                 if let Some(VarState::Linked(b)) = self.variables.get(*id) {
                     self.show_tree(b)
                 } else {
                     number_to_string(*id)
                 }
             }
-            Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
-            Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
-            Era => format!("*"),
-            Package(id) => format!("@{}", id),
-            Ext(..) => format!("<ext>"),
+            Tree::Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
+            Tree::Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
+            Tree::Era => format!("*"),
+            Tree::Package(id) => format!("@{}", id),
+            Tree::Ext(..) => format!("<ext>"),
+
+            Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
+            Tree::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
         }
     }
 
@@ -615,9 +626,8 @@ impl Net {
                     panic!("Package with id {idx} is not found")
                 }
             }
-            Tree::Ext(_, _) => {
-                vec![]
-            }
+            Tree::Ext(_, _) => vec![],
+            Tree::Primitive(_) => vec![],
         }
     }
 }

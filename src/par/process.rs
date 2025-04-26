@@ -1,4 +1,4 @@
-use super::types::Type;
+use super::{primitive::Primitive, types::Type};
 use crate::location::{Span, Spanning};
 use indexmap::IndexMap;
 use std::{
@@ -58,6 +58,7 @@ pub enum Expression<Name, Typ> {
         expr_type: Typ,
         process: Arc<Process<Name, Typ>>,
     },
+    Primitive(Span, Primitive, Typ),
 }
 
 #[derive(Clone, Debug)]
@@ -424,6 +425,10 @@ impl<Name: Clone + Hash + Eq, Typ: Clone> Expression<Name, Typ> {
                     caps,
                 )
             }
+            Self::Primitive(span, value, typ) => (
+                Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone())),
+                Captures::new(),
+            ),
         }
     }
 
@@ -449,6 +454,9 @@ impl<Name: Clone + Hash + Eq, Typ: Clone> Expression<Name, Typ> {
                 expr_type: expr_type.clone(),
                 process: process.optimize(),
             }),
+            Self::Primitive(span, value, typ) => {
+                Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
+            }
         }
     }
 }
@@ -468,6 +476,7 @@ impl<Name: Clone + Spanning, Typ: Clone> Expression<Name, Typ> {
                 consume(chan_name.clone(), chan_type.clone());
                 process.types_at_spans(consume);
             }
+            Self::Primitive(_, _, _) => {}
         }
     }
 }
@@ -477,6 +486,7 @@ impl<Name, Typ: Clone> Expression<Name, Typ> {
         match self {
             Self::Reference(_, _, typ) => typ.clone(),
             Self::Fork { expr_type, .. } => expr_type.clone(),
+            Self::Primitive(_, _, typ) => typ.clone(),
         }
     }
 }
@@ -638,6 +648,12 @@ impl<Name: Display, Typ> Expression<Name, Typ> {
                 write!(f, "| {{")?;
                 process.pretty(f, indent + 1)?;
                 indentation(f, indent)?;
+                write!(f, "}}")
+            }
+
+            Self::Primitive(_, value, _) => {
+                write!(f, "#{{")?;
+                value.pretty(f, indent)?;
                 write!(f, "}}")
             }
         }

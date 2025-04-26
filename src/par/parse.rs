@@ -4,6 +4,7 @@ use super::{
         ConstructBranch, ConstructBranches, Expression, Pattern, Process,
     },
     lexer::{lex, Input, Token, TokenKind},
+    primitive::Primitive,
 };
 use crate::location::{Point, Span, Spanning};
 use crate::par::{
@@ -801,6 +802,7 @@ fn pattern_receive_type(input: &mut Input) -> Result<Pattern<Name>> {
 
 fn expression(input: &mut Input) -> Result<Expression<Name>> {
     alt((
+        expr_literal_int,
         expr_let,
         expr_do,
         expr_fork,
@@ -815,6 +817,15 @@ fn expression(input: &mut Input) -> Result<Expression<Name>> {
 fn expr_grouped(input: &mut Input) -> Result<Expression<Name>> {
     (t(TokenKind::LCurly), expression, t(TokenKind::RCurly))
         .map(|(open, expr, close)| Expression::Grouped(open.span.join(close.span), Box::new(expr)))
+        .parse_next(input)
+}
+
+fn expr_literal_int(input: &mut Input) -> Result<Expression<Name>> {
+    t(TokenKind::Integer)
+        .map(|token| {
+            let i = i128::from_str_radix(token.raw, 10).expect("invalid integer literal");
+            Expression::Primitive(token.span, Primitive::Int(i))
+        })
         .parse_next(input)
 }
 

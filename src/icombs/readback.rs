@@ -1,5 +1,5 @@
 use crate::icombs::compiler::multiplex_trees;
-use crate::par::types::{Type, TypeDefs};
+use crate::par::types::{PrimitiveType, Type, TypeDefs};
 use futures::{
     channel::oneshot::{channel, Receiver, Sender},
     future::{join, select, BoxFuture, Either},
@@ -15,6 +15,7 @@ use std::{
     },
 };
 
+use super::PrimitiveComb;
 use super::{compiler::TypedTree, Name, Net, Tree};
 pub struct CoroState {
     pub(crate) net: Arc<Mutex<Net>>,
@@ -204,6 +205,13 @@ impl SharedState {
         }
     }
 
+    pub async fn as_int(&self, tree: Tree) -> i128 {
+        match tree {
+            Tree::Primitive(PrimitiveComb::Int(i)) => i,
+            _ => unreachable!("Blah blah"),
+        }
+    }
+
     pub async fn as_con(&self, tree: Tree) -> (Tree, Tree) {
         match tree {
             Tree::Con(a, b) => (*a, *b),
@@ -227,6 +235,11 @@ impl SharedState {
                 self.add_redex(other, Tree::e()).await;
             }
         }
+    }
+
+    pub async fn read_int(&self, tree: Tree) -> i128 {
+        let tree = self.read_port_as_tree(tree).await;
+        self.as_int(tree).await
     }
 
     /// Eagerly read back a CON node.
@@ -371,6 +384,10 @@ impl SharedState {
                 }
             };
             match ty {
+                Type::Primitive(_, PrimitiveType::Int) => {
+                    let i = self.as_int(tree).await;
+                    ReadbackResult::Int(i)
+                }
                 Type::Send(_, from, to) => {
                     let (a, b) = self.as_par(tree).await;
                     ReadbackResult::Send(
@@ -574,6 +591,7 @@ pub enum ReadbackResult {
     Suspended(TypedTree),
     Waiting(TypedTree, async_watch::Receiver<bool>),
     Variable(usize),
+    Int(i128),
     Unsupported(TypedTree),
 }
 

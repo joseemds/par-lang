@@ -15,12 +15,12 @@
 //! back into Par expressions.
 
 pub mod compiler;
-mod equivalence;
 pub mod net;
 pub mod parse;
+pub mod primitive;
 pub use compiler::{compile_file, IcCompiled};
-//pub use equivalence::are_equivalent;
 pub use net::{Net, Tree, VarId};
+pub use primitive::PrimitiveComb;
 
 use crate::par::language::Internal;
 pub mod readback;

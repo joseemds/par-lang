@@ -4,7 +4,7 @@ use winnow::{
     combinator::{alt, not, peek, preceded, repeat},
     error::{EmptyError, ParserError},
     stream::{ParseSlice, TokenSlice},
-    token::{any, literal, take_while},
+    token::{any, literal, take, take_while},
     Parser, Result,
 };
 
@@ -27,6 +27,8 @@ pub enum TokenKind {
     Bang,
     Quest,
     Link,
+
+    Integer,
 
     LowercaseIdentifier,
     UppercaseIdentifier,
@@ -87,6 +89,8 @@ impl TokenKind {
             TokenKind::Bang => "!",
             TokenKind::Quest => "?",
             TokenKind::Link => "<>",
+
+            TokenKind::Integer => "integer",
 
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
@@ -157,6 +161,15 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
         while let Ok(c) = peek(any::<&str, Error>).parse_next(input) {
             let column = last_newline - input.len(); // starting column
             let Some((raw, kind)) = (match c {
+                '0'..='9' | '-' | '+' => {
+                    let raw = (
+                        take(1 as usize),
+                        take_while(0.., |c| matches!(c, '0'..='9' | '_')),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    Some((raw, TokenKind::Integer))
+                }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let raw = take_while(
                         0..,

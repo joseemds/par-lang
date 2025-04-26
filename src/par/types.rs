@@ -55,6 +55,7 @@ pub enum Operation<Name> {
 
 #[derive(Clone, Debug)]
 pub enum Type<Name> {
+    Primitive(Span, PrimitiveType),
     Chan(Span, Box<Self>),
     /// type variable
     Var(Span, Name),
@@ -89,6 +90,11 @@ pub enum Type<Name> {
     Self_(Span, Option<Name>),
     SendType(Span, Name, Box<Self>),
     ReceiveType(Span, Name, Box<Self>),
+}
+
+#[derive(Clone, Debug)]
+pub enum PrimitiveType {
+    Int,
 }
 
 #[derive(Clone, Debug)]
@@ -232,6 +238,7 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
         self_neg: &IndexSet<Option<Name>>,
     ) -> Result<(), TypeError<Name>> {
         Ok(match typ {
+            Type::Primitive(_, _) => (),
             Type::Chan(_, t) => self.validate_type(t, deps, self_neg, self_pos)?,
             Type::Var(span, name) => {
                 self.get(span, name, &[])?;
@@ -296,7 +303,8 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
 impl<Name> Spanning for Type<Name> {
     fn span(&self) -> Span {
         match self {
-            Self::Chan(span, _)
+            Self::Primitive(span, _)
+            | Self::Chan(span, _)
             | Self::Var(span, _)
             | Self::Name(span, _, _)
             | Self::Send(span, _, _)
@@ -314,59 +322,10 @@ impl<Name> Spanning for Type<Name> {
     }
 }
 
-impl<Name> Type<Name> {
-    pub fn is_receive(&self) -> bool {
-        match self {
-            | Self::Var(_, _) // without requirements
-            | Self::Name(_, _, _) // should not be called on this
-            | Self::Send(_, _, _)
-            | Self::Either(_, _)
-            | Self::Choice(_, _)
-            | Self::Break(_)
-            | Self::Continue(_)
-            | Self::Self_(_, _) // generally
-            => false,
-
-            Self::Receive(_, _, _) => true,
-
-            Self::Chan(_, t) => t.is_send(),
-
-            | Self::Recursive { body, .. }
-            | Self::Iterative { body, .. }
-            | Self::SendType(_, _, body)
-            | Self::ReceiveType(_, _, body)
-            => body.is_receive(),
-        }
-    }
-
-    pub fn is_send(&self) -> bool {
-        match self {
-            | Self::Var(_, _) // without requirements
-            | Self::Name(_, _, _) // should not be called on this
-            | Self::Receive(_, _, _)
-            | Self::Either(_, _)
-            | Self::Choice(_, _)
-            | Self::Break(_)
-            | Self::Continue(_)
-            | Self::Self_(_, _) // generally
-            => false,
-
-            Self::Send(_, _, _) => true,
-
-            Self::Chan(_, t) => t.is_receive(),
-
-            | Self::Recursive { body, .. }
-            | Self::Iterative { body, .. }
-            | Self::SendType(_, _, body)
-            | Self::ReceiveType(_, _, body)
-            => body.is_send(),
-        }
-    }
-}
-
 impl<Name: Eq + Hash> Type<Name> {
     pub fn map_names<N: Eq + Hash>(self, f: &mut impl FnMut(Name) -> N) -> Type<N> {
         match self {
+            Self::Primitive(span, p) => Type::Primitive(span, p),
             Self::Chan(span, t) => Type::Chan(span, Box::new(t.map_names(f))),
             Self::Var(span, name) => Type::Var(span, f(name)),
             Self::Name(span, name, args) => Type::Name(
@@ -436,6 +395,7 @@ fn map_label<Name, N>(label: Option<Name>, f: &mut impl FnMut(Name) -> N) -> Opt
 impl<Name: Clone + Eq + Hash> Type<Name> {
     pub fn substitute(self, var: &Name, typ: &Self) -> Result<Self, TypeError<Name>> {
         Ok(match self {
+            Self::Primitive(span, p) => Self::Primitive(span, p),
             Self::Chan(span, t) => Self::Chan(span, Box::new(t.substitute(var, typ)?)),
             Self::Var(span, name) => {
                 if &name == var {
@@ -536,14 +496,15 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 
     pub fn is_positive(&self, type_defs: &TypeDefs<Name>) -> Result<bool, TypeError<Name>> {
         Ok(match self {
-            Type::Chan(_, t) => t.is_negative(type_defs)?,
-            Type::Var(_, _) => false,
-            Type::Name(loc, name, args) => {
+            Self::Primitive(_, _) => true,
+            Self::Chan(_, t) => t.is_negative(type_defs)?,
+            Self::Var(_, _) => false,
+            Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_positive(type_defs)?
             }
-            Type::Send(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
-            Type::Receive(_, _, _) => false,
-            Type::Either(_, branches) => {
+            Self::Send(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
+            Self::Receive(_, _, _) => false,
+            Self::Either(_, branches) => {
                 for (_, t) in branches {
                     if !t.is_positive(type_defs)? {
                         return Ok(false);
@@ -551,17 +512,17 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
                 }
                 true
             }
-            Type::Choice(_, _) => false,
-            Type::Break(_) => true,
-            Type::Continue(_) => false,
-            Type::Recursive { body, .. } => body.is_positive(type_defs)?,
-            Type::Iterative { body, .. } => body.is_positive(type_defs)?,
-            Type::Self_(_, _) => true,
-            Type::SendType(loc, name, t) => t
+            Self::Choice(_, _) => false,
+            Self::Break(_) => true,
+            Self::Continue(_) => false,
+            Self::Recursive { body, .. } => body.is_positive(type_defs)?,
+            Self::Iterative { body, .. } => body.is_positive(type_defs)?,
+            Self::Self_(_, _) => true,
+            Self::SendType(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_positive(type_defs)?,
-            Type::ReceiveType(loc, name, t) => t
+            Self::ReceiveType(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_positive(type_defs)?,
@@ -570,15 +531,16 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 
     pub fn is_negative(&self, type_defs: &TypeDefs<Name>) -> Result<bool, TypeError<Name>> {
         Ok(match self {
-            Type::Chan(_, t) => t.is_positive(type_defs)?,
-            Type::Var(_, _) => false,
-            Type::Name(loc, name, args) => {
+            Self::Primitive(_, _) => true,
+            Self::Chan(_, t) => t.is_positive(type_defs)?,
+            Self::Var(_, _) => false,
+            Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_negative(type_defs)?
             }
-            Type::Send(_, _, _) => false,
-            Type::Receive(_, t, u) => t.is_positive(type_defs)? && u.is_negative(type_defs)?,
-            Type::Either(_, _) => false,
-            Type::Choice(_, branches) => {
+            Self::Send(_, _, _) => false,
+            Self::Receive(_, t, u) => t.is_positive(type_defs)? && u.is_negative(type_defs)?,
+            Self::Either(_, _) => false,
+            Self::Choice(_, branches) => {
                 for (_, t) in branches {
                     if !t.is_negative(type_defs)? {
                         return Ok(false);
@@ -586,16 +548,16 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
                 }
                 true
             }
-            Type::Break(_) => false,
-            Type::Continue(_) => true,
-            Type::Recursive { body, .. } => body.is_negative(type_defs)?,
-            Type::Iterative { body, .. } => body.is_negative(type_defs)?,
-            Type::Self_(_, _) => true,
-            Type::SendType(loc, name, t) => t
+            Self::Break(_) => false,
+            Self::Continue(_) => true,
+            Self::Recursive { body, .. } => body.is_negative(type_defs)?,
+            Self::Iterative { body, .. } => body.is_negative(type_defs)?,
+            Self::Self_(_, _) => true,
+            Self::SendType(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_negative(type_defs)?,
-            Type::ReceiveType(loc, name, t) => t
+            Self::ReceiveType(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_negative(type_defs)?,
@@ -768,6 +730,11 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 
     pub fn dual(&self, type_defs: &TypeDefs<Name>) -> Result<Self, TypeError<Name>> {
         Ok(match self {
+            Self::Primitive(span, p) => Self::Chan(
+                span.clone(),
+                Box::new(Self::Primitive(span.clone(), p.clone())),
+            ),
+
             Self::Chan(_, t) => *t.clone(),
 
             Self::Var(span, name) => Self::Chan(
@@ -843,6 +810,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 
     fn chan_self(self, label: &Option<Name>) -> Self {
         match self {
+            Self::Primitive(span, p) => Self::Primitive(span, p),
+
             Self::Chan(span, t) => match *t {
                 Self::Self_(span, label1) if &label1 == label => Self::Self_(span, label1),
                 t => Self::Chan(span, Box::new(t.chan_self(label))),
@@ -961,6 +930,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         type_defs: &TypeDefs<Name>,
     ) -> Result<Self, TypeError<Name>> {
         Ok(match self {
+            Self::Primitive(span, p) => Self::Primitive(span, p),
+
             Self::Chan(span, t) => match *t {
                 Self::Self_(span, label) if &label == top_label => Self::Iterative {
                     span,
@@ -1101,6 +1072,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         type_defs: &TypeDefs<Name>,
     ) -> Result<Self, TypeError<Name>> {
         Ok(match self {
+            Self::Primitive(span, p) => Self::Primitive(span, p),
+
             Self::Chan(span, t) => match *t {
                 Self::Self_(span, label) if &label == top_label => Self::Recursive {
                     span,
@@ -1225,6 +1198,7 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 
     fn invalidate_ascendent(&mut self, label: &Option<Name>) {
         match self {
+            Self::Primitive(_, _) => {}
             Self::Var(_, _) => {}
             Self::Name(_, _, args) => {
                 for arg in args {
@@ -2256,6 +2230,16 @@ where
                     process,
                 }))
             }
+
+            process::Expression::Primitive(span, value, ()) => {
+                let typ = value.get_type();
+                typ.check_assignable(span, target_type, &self.type_defs)?;
+                Ok(Arc::new(process::Expression::Primitive(
+                    span.clone(),
+                    value.clone(),
+                    typ,
+                )))
+            }
         }
     }
 
@@ -2317,6 +2301,18 @@ where
                     dual,
                 ))
             }
+
+            process::Expression::Primitive(span, value, ()) => {
+                let typ = value.get_type();
+                Ok((
+                    Arc::new(process::Expression::Primitive(
+                        span.clone(),
+                        value.clone(),
+                        typ.clone(),
+                    )),
+                    typ,
+                ))
+            }
         }
     }
 
@@ -2334,6 +2330,8 @@ where
 impl<Name: Display> Type<Name> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
+            Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
+
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;
                 body.pretty(f, indent)
@@ -2499,6 +2497,8 @@ impl<Name: Display> Type<Name> {
 
     pub fn pretty_compact(&self, f: &mut impl Write) -> fmt::Result {
         match self {
+            Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
+
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;
                 body.pretty_compact(f)

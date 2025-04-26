@@ -3,6 +3,7 @@
 use std::{fmt::Display, hash::Hash, sync::Arc};
 
 use super::{
+    primitive::Primitive,
     process::{self, Captures},
     types::Type,
 };
@@ -26,6 +27,7 @@ pub enum Pattern<Name> {
 
 #[derive(Clone, Debug)]
 pub enum Expression<Name> {
+    Primitive(Span, Primitive),
     Reference(Span, Name),
     Grouped(Span, Box<Self>),
     Let {
@@ -403,6 +405,12 @@ impl<Name> Spanning for Pattern<Name> {
 impl<Name: Clone + Hash + Eq> Expression<Name> {
     pub fn compile(&self) -> Result<Arc<process::Expression<Internal<Name>, ()>>, CompileError> {
         Ok(match self {
+            Self::Primitive(span, value) => Arc::new(process::Expression::Primitive(
+                span.clone(),
+                value.clone(),
+                (),
+            )),
+
             Self::Reference(span, name) => Arc::new(process::Expression::Reference(
                 span.clone(),
                 Internal::Original(name.clone()),
@@ -519,7 +527,8 @@ impl<Name: Clone + Hash + Eq> Expression<Name> {
 impl<Name> Spanning for Expression<Name> {
     fn span(&self) -> Span {
         match self {
-            Self::Reference(span, _)
+            Self::Primitive(span, _)
+            | Self::Reference(span, _)
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Do { span, .. }

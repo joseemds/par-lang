@@ -82,6 +82,7 @@ pub enum Event {
     Either(Name),
     Choose(Name),
     Named(TypedTree),
+    Int(i128),
 }
 
 impl Debug for Handle {
@@ -108,6 +109,7 @@ impl Event {
             Self::Either(_) => Polarity::Positive,
             Self::Choose(_) => Polarity::Negative,
             Self::Named(_) => Polarity::Positive,
+            Self::Int(_) => Polarity::Positive,
         }
     }
 }
@@ -248,6 +250,9 @@ impl ReadbackStateInner {
                     }
                     Event::Break | Event::Continue => {
                         ui.label(RichText::from("!").strong().code());
+                    }
+                    Event::Int(i) => {
+                        ui.label(RichText::from(format!("{}", i)).strong().code());
                     }
                 }
             }
@@ -488,6 +493,11 @@ impl ReadbackStateInner {
                     lock.add_event(Event::Named(tree));
                     lock.set_end(None);
                 }
+                ReadbackResult::Int(i) => {
+                    let mut lock = handle_2.lock().unwrap();
+                    lock.add_event(Event::Int(i));
+                    lock.set_end(None);
+                }
                 e => {
                     eprintln!("Don't know how to read back: {e:?}");
                 }
@@ -556,6 +566,7 @@ impl ReadbackImplLevel {
         use core::ops::BitAnd;
         use ReadbackImplLevel::*;
         match typ {
+            Type::Primitive(_, _) => Ok,
             Type::Chan(_, body) => ReadbackImplLevel::from_type(&body, prog, type_variables),
             Type::Name(loc, name, items) => {
                 if !type_variables.contains(name) {
