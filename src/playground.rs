@@ -10,11 +10,11 @@ use eframe::egui::{self, RichText};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
-use crate::par::program::{Declaration, Definition, NameWithType, Program, TypeDef, TypeOnHover};
+use crate::par::program::{Definition, NameWithType, Program, TypeOnHover};
 use crate::{
     icombs::{compile_file, IcCompiled},
     par::{
-        language::{CompileError, Internal, Name},
+        language::{CompileError, Name},
         parse::{parse_program, SyntaxError},
         process::Expression,
         types::TypeError,
@@ -48,32 +48,6 @@ impl Compiled {
         parse_program(source)
             .map_err(Error::Parse)
             .and_then(|program| {
-                let type_defs = program
-                    .type_defs
-                    .into_iter()
-                    .map(
-                        |TypeDef {
-                             span,
-                             name,
-                             params,
-                             typ,
-                         }| TypeDef {
-                            span,
-                            name: Internal::Original(name),
-                            params: params.into_iter().map(|x| Internal::Original(x)).collect(),
-                            typ: typ.map_names(&mut Internal::Original),
-                        },
-                    )
-                    .collect();
-                let declarations = program
-                    .declarations
-                    .into_iter()
-                    .map(|Declaration { span, name, typ }| Declaration {
-                        span,
-                        name: Internal::Original(name),
-                        typ: typ.map_names(&mut Internal::Original),
-                    })
-                    .collect();
                 let compile_result = program
                     .definitions
                     .into_iter()
@@ -85,7 +59,7 @@ impl Compiled {
                          }| {
                             expression.compile().map(|compiled| Definition {
                                 span,
-                                name: Internal::Original(name.clone()),
+                                name,
                                 expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
                             })
                         },
@@ -95,8 +69,8 @@ impl Compiled {
                     .map_err(|error| Error::Compile(error))
                     .and_then(|compiled| {
                         Ok(Compiled::from_program(Program {
-                            type_defs,
-                            declarations,
+                            type_defs: program.type_defs,
+                            declarations: program.declarations,
                             definitions: compiled,
                         })?)
                     })
@@ -104,7 +78,7 @@ impl Compiled {
     }
 
     pub(crate) fn from_program(
-        program: Program<Internal<Name>, Arc<Expression<Internal<Name>, ()>>>,
+        program: Program<Name, Arc<Expression<Name, ()>>>,
     ) -> Result<Self, Error> {
         let pretty = program
             .definitions
@@ -138,14 +112,14 @@ impl Compiled {
 
 #[derive(Clone)]
 pub(crate) struct Checked {
-    pub(crate) program: Arc<CheckedProgram<Internal<Name>>>,
-    pub(crate) type_on_hover: Arc<TypeOnHover<Internal<Name>>>,
+    pub(crate) program: Arc<CheckedProgram<Name>>,
+    pub(crate) type_on_hover: Arc<TypeOnHover<Name>>,
     pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
 }
 
 impl Checked {
     pub(crate) fn from_program(
-        program: CheckedProgram<Internal<Name>>,
+        program: CheckedProgram<Name>,
     ) -> Result<Self, crate::icombs::compiler::Error> {
         // attempt to compile to interaction combinators
         Ok(Checked {
@@ -161,7 +135,7 @@ pub(crate) enum Error {
     Parse(SyntaxError),
     Compile(CompileError),
     InetCompile(crate::icombs::compiler::Error),
-    Type(TypeError<Internal<Name>>),
+    Type(TypeError<Name>),
 }
 
 impl Playground {
@@ -331,26 +305,22 @@ impl Playground {
     fn readback(
         readback_state: &mut Option<ReadbackState>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedProgram<Internal<Name>>>,
+        program: Arc<CheckedProgram<Name>>,
         compiled: &IcCompiled,
     ) {
-        for (internal_name, _) in &program.definitions {
-            if let Internal::Original(name) = internal_name {
-                if ui.button(format!("{}", name)).clicked() {
-                    let ty = compiled
-                        .get_type_of(&Internal::Original(name.clone()))
-                        .unwrap();
-                    let mut net = compiled.create_net();
-                    let child_net = compiled.get_with_name(&internal_name).unwrap();
-                    let tree = net.inject_net(child_net).with_type(ty.clone());
-                    *readback_state = Some(ReadbackState::initialize(
-                        ui,
-                        net,
-                        tree,
-                        Arc::new(TokioSpawn),
-                        &program,
-                    ));
-                }
+        for (name, _) in &program.definitions {
+            if ui.button(format!("{}", name)).clicked() {
+                let ty = compiled.get_type_of(name).unwrap();
+                let mut net = compiled.create_net();
+                let child_net = compiled.get_with_name(name).unwrap();
+                let tree = net.inject_net(child_net).with_type(ty.clone());
+                *readback_state = Some(ReadbackState::initialize(
+                    ui,
+                    net,
+                    tree,
+                    Arc::new(TokioSpawn),
+                    &program,
+                ));
             }
         }
     }

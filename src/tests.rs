@@ -15,13 +15,10 @@ use crate::{
         readback::{ReadbackResult, SharedState},
         Net,
     },
-    par::language::{self, Internal},
-    par::program::CheckedProgram,
+    par::{language::Name, program::CheckedProgram},
     playground,
     spawn::TokioSpawn,
 };
-
-use crate::icombs::Name;
 
 #[derive(Debug, Default, Clone)]
 pub enum ReadbackPattern<Name: Clone> {
@@ -300,11 +297,10 @@ async fn test_whole_programs() -> Result<(), String> {
         };
         for (idx, j) in i.tests.into_iter().enumerate() {
             let def_name = format!("test_{}", idx);
-            let def_name = Internal::Original(language::Name {
+            let def_name = Name {
                 span: Default::default(),
-                modules: vec![],
-                primary: def_name,
-            });
+                string: def_name,
+            };
             let tree = net
                 .lock()
                 .unwrap()
@@ -312,11 +308,10 @@ async fn test_whole_programs() -> Result<(), String> {
             let pattern = match j.pattern {
                 TestPattern::Code(_) => {
                     let def_name = format!("test_pat_{}", idx);
-                    let def_name = Internal::Original(language::Name {
+                    let def_name = Name {
                         span: Default::default(),
-                        modules: vec![],
-                        primary: def_name.into(),
-                    });
+                        string: def_name.into(),
+                    };
                     let tree = net
                         .lock()
                         .unwrap()

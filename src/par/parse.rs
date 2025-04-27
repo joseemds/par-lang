@@ -194,71 +194,45 @@ fn module_path(input: &mut Input) -> Result<Vec<(Span, String)>> {
     .parse_next(input)
 }
 
-fn var_name(input: &mut Input) -> Result<Name> {
-    lowercase_identifier
-        .map(|(span, primary)| Name {
-            span,
-            modules: vec![],
-            primary,
-        })
-        .parse_next(input)
-}
-
-fn branch_name(input: &mut Input) -> Result<Name> {
-    lowercase_identifier
-        .map(|(span, primary)| Name {
-            span,
-            modules: vec![],
-            primary,
-        })
-        .parse_next(input)
-}
-
-fn def_name(input: &mut Input) -> Result<Name> {
-    (module_path, lowercase_identifier)
-        .map(|(modules_with_spans, (mut span, primary))| {
-            for (span1, _) in modules_with_spans.iter().rev() {
-                span = span1.join(span);
-            }
-            let modules = modules_with_spans
-                .into_iter()
-                .map(|(_, module)| module)
-                .collect();
-            Name {
-                span,
-                modules,
-                primary,
-            }
-        })
+fn type_def_name(input: &mut Input) -> Result<Name> {
+    uppercase_identifier
+        .map(|(span, string)| Name { span, string })
         .parse_next(input)
 }
 
 fn type_name(input: &mut Input) -> Result<Name> {
-    (module_path, uppercase_identifier)
-        .map(|(modules_with_spans, (mut span, primary))| {
-            for (span1, _) in modules_with_spans.iter().rev() {
-                span = span1.join(span);
-            }
-            let modules = modules_with_spans
-                .into_iter()
-                .map(|(_, module)| module)
-                .collect();
-            Name {
-                span,
-                modules,
-                primary,
-            }
-        })
+    uppercase_identifier
+        .map(|(span, string)| Name { span, string })
         .parse_next(input)
 }
 
 fn type_var_name(input: &mut Input) -> Result<Name> {
     uppercase_identifier
-        .map(|(span, primary)| Name {
-            span,
-            modules: vec![],
-            primary,
-        })
+        .map(|(span, string)| Name { span, string })
+        .parse_next(input)
+}
+
+fn def_name(input: &mut Input) -> Result<Name> {
+    lowercase_identifier
+        .map(|(span, string)| Name { span, string })
+        .parse_next(input)
+}
+
+fn var_name(input: &mut Input) -> Result<Name> {
+    lowercase_identifier
+        .map(|(span, string)| Name { span, string })
+        .parse_next(input)
+}
+
+fn ref_name(input: &mut Input) -> Result<Name> {
+    lowercase_identifier
+        .map(|(span, string)| Name { span, string })
+        .parse_next(input)
+}
+
+fn branch_name(input: &mut Input) -> Result<Name> {
+    lowercase_identifier
+        .map(|(span, string)| Name { span, string })
         .parse_next(input)
 }
 
@@ -437,7 +411,7 @@ pub fn parse_program(
 fn type_def(input: &mut Input) -> Result<TypeDef<Name>> {
     commit_after(
         t(TokenKind::Type),
-        (type_name, type_params, t(TokenKind::Eq), typ),
+        (type_def_name, type_params, t(TokenKind::Eq), typ),
     )
     .map(|(pre, (name, type_params, _, typ))| TypeDef {
         span: pre.span.join(typ.span()),
@@ -1072,7 +1046,7 @@ fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch<Name>> {
 fn application(input: &mut Input) -> Result<Expression<Name>> {
     (
         alt((
-            def_name.map(|name| Expression::Reference(name.span, name)),
+            ref_name.map(|name| Expression::Reference(name.span, name)),
             expr_grouped,
         )),
         apply,
@@ -1283,7 +1257,7 @@ fn proc_telltypes(input: &mut Input) -> Result<Process<Name>> {
 }
 
 fn command(input: &mut Input) -> Result<Process<Name>> {
-    (def_name, cmd)
+    (var_name, cmd)
         .map(|(name, cmd)| match cmd {
             Some(cmd) => Process::Command(name, cmd),
             None => {

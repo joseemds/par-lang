@@ -9,7 +9,7 @@ use indexmap::IndexSet;
 
 use crate::{
     icombs::{net::number_to_string, Net},
-    par::{program::CheckedProgram, types::TypeDefs},
+    par::{language::Name, program::CheckedProgram, types::TypeDefs},
 };
 
 use crate::{
@@ -26,8 +26,6 @@ use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
 };
-
-use crate::icombs::Name;
 
 #[derive(Clone)]
 pub struct ReadbackStateInner {

@@ -22,8 +22,4 @@ pub use compiler::{compile_file, IcCompiled};
 pub use net::{Net, Tree, VarId};
 pub use primitive::PrimitiveComb;
 
-use crate::par::language::Internal;
 pub mod readback;
-
-/// Names used internally by the interaction combinator compiler.
-pub type Name = Internal<crate::par::language::Name>;

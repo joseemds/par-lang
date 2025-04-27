@@ -1,4 +1,5 @@
 use crate::icombs::compiler::multiplex_trees;
+use crate::par::language::Name;
 use crate::par::types::{PrimitiveType, Type, TypeDefs};
 use futures::{
     channel::oneshot::{channel, Receiver, Sender},
@@ -16,7 +17,7 @@ use std::{
 };
 
 use super::PrimitiveComb;
-use super::{compiler::TypedTree, Name, Net, Tree};
+use super::{compiler::TypedTree, Net, Tree};
 pub struct CoroState {
     pub(crate) net: Arc<Mutex<Net>>,
     new_redex: Mutex<Vec<futures::channel::mpsc::Sender<()>>>,

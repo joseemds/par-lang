@@ -8,6 +8,7 @@ use super::{
     PrimitiveComb,
 };
 use crate::par::{
+    language::Name,
     primitive::Primitive,
     process::{Captures, Command, Expression, Process},
     types::Type,
@@ -21,8 +22,6 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::hash::Hash;
-
-use super::Name;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum VariableKind {
