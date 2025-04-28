@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
@@ -36,6 +36,7 @@ pub struct Playground {
     readback_state: Option<crate::readback::ReadbackState>,
     cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
+    last_is_dark: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +203,19 @@ pub(crate) enum Error {
 
 impl Playground {
     pub fn new(cc: &eframe::CreationContext<'_>, file_path: Option<PathBuf>) -> Box<Self> {
-        cc.egui_ctx.set_visuals(egui::Visuals::light());
+        let system_dark = cc.egui_ctx
+            .input(|ri| ri.raw.system_theme.map(|t| t == Theme::Dark))
+            .unwrap_or(false);
+        let initial_is_dark = ThemeMode::default().is_dark(system_dark);
+
+        // set visuals on first run
+        cc.egui_ctx.set_visuals(if initial_is_dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
+
+        // cc.egui_ctx.set_visuals(egui::Visuals::light());
         cc.egui_ctx.all_styles_mut(|style| {
             style.text_styles.extend([
                 (egui::TextStyle::Monospace, egui::FontId::monospace(16.0)),
@@ -224,6 +237,7 @@ impl Playground {
             readback_state: Default::default(),
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
+            last_is_dark: initial_is_dark,
         });
 
         if let Some(path) = file_path {
@@ -240,13 +254,24 @@ impl eframe::App for Playground {
         let system_dark = ctx
             .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
             .unwrap_or(false);
-
         let is_dark = self.theme_mode.is_dark(system_dark);
-        ctx.set_visuals(if is_dark {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        });
+
+        // reapply transparent backgrounds for widget background and code editor background.
+        if is_dark != self.last_is_dark {
+            let mut visuals = if is_dark {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            };
+
+            visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+            visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+            visuals.widgets.active .bg_fill = egui::Color32::TRANSPARENT;
+            visuals.code_bg_color = egui::Color32::TRANSPARENT;
+
+            ctx.set_visuals(visuals);
+            self.last_is_dark = is_dark;
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
