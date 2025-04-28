@@ -237,7 +237,11 @@ impl Playground {
 impl eframe::App for Playground {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Set overall UI style based on theme mode
-        let is_dark = self.theme_mode.is_dark(ctx.style().visuals.dark_mode);
+        let system_dark = ctx
+            .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
+            .unwrap_or(false);
+
+        let is_dark = self.theme_mode.is_dark(system_dark);
         ctx.set_visuals(if is_dark {
             egui::Visuals::dark()
         } else {
