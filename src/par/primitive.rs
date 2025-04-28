@@ -16,7 +16,7 @@ impl Primitive {
         }
     }
 
-    pub fn get_type<Name>(&self) -> Type<Name> {
+    pub fn get_type(&self) -> Type {
         match self {
             Self::Int(_) => Type::Primitive(Default::default(), PrimitiveType::Int),
 

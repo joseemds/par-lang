@@ -127,7 +127,7 @@ impl ReadbackState {
         net: Net,
         tree: TypedTree,
         spawner: Arc<dyn Spawn + Send + Sync>,
-        program: &Arc<CheckedProgram<Name>>,
+        program: &Arc<CheckedProgram>,
     ) -> Self {
         let root_impl = ReadbackImplLevel::from_type(&tree.ty, &program, &mut Default::default());
         let ctx = ui.ctx().clone();
@@ -155,7 +155,7 @@ impl ReadbackState {
         }
     }
 
-    pub fn show_readback(&mut self, ui: &mut egui::Ui, prog: Arc<CheckedProgram<Name>>) {
+    pub fn show_readback(&mut self, ui: &mut egui::Ui, prog: Arc<CheckedProgram>) {
         ui.vertical(|ui| {
             self.root_impl.show_message(ui);
             ui.horizontal(|ui| {
@@ -201,7 +201,7 @@ impl ReadbackStateInner {
     fn show_history_line<'h>(
         &mut self,
         ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram<Name>>,
+        prog: Arc<CheckedProgram>,
         events: &'h [Event],
     ) -> &'h [Event] {
         let mut polarity = None::<Polarity>;
@@ -263,7 +263,7 @@ impl ReadbackStateInner {
     fn show_history<'h>(
         &mut self,
         ui: &mut egui::Ui,
-        prog: Arc<CheckedProgram<Name>>,
+        prog: Arc<CheckedProgram>,
         events: &'h [Event],
     ) {
         let mut events = events;
@@ -279,7 +279,7 @@ impl ReadbackStateInner {
         &mut self,
         ui: &mut egui::Ui,
         handle: Arc<Mutex<Handle>>,
-        prog: Arc<CheckedProgram<Name>>,
+        prog: Arc<CheckedProgram>,
     ) {
         egui::Frame::default()
             .stroke(egui::Stroke::new(1.0, egui::Color32::GRAY))
@@ -394,7 +394,7 @@ impl ReadbackStateInner {
         &mut self,
         handle: Arc<Mutex<Handle>>,
         port: ReadbackResult,
-        prog: Arc<CheckedProgram<Name>>,
+        prog: Arc<CheckedProgram>,
     ) -> BoxFuture<()> {
         async move {
             let handle_2 = handle.clone();
@@ -506,10 +506,10 @@ impl ReadbackStateInner {
 }
 
 pub fn prepare_type_for_readback(
-    type_defs: &TypeDefs<Name>,
-    mut ty: Type<Name>,
+    type_defs: &TypeDefs,
+    mut ty: Type,
     type_variables: &IndexSet<Name>,
-) -> Type<Name> {
+) -> Type {
     loop {
         ty = match ty {
             Type::Name(loc, name, args) => {
@@ -556,11 +556,7 @@ impl core::ops::BitAnd<ReadbackImplLevel> for ReadbackImplLevel {
 }
 
 impl ReadbackImplLevel {
-    fn from_type(
-        typ: &Type<Name>,
-        prog: &CheckedProgram<Name>,
-        type_variables: &mut BTreeSet<Name>,
-    ) -> Self {
+    fn from_type(typ: &Type, prog: &CheckedProgram, type_variables: &mut BTreeSet<Name>) -> Self {
         use core::ops::BitAnd;
         use ReadbackImplLevel::*;
         match typ {

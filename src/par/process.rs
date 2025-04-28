@@ -1,72 +1,71 @@
-use super::{primitive::Primitive, types::Type};
-use crate::location::{Span, Spanning};
+use super::{language::Name, primitive::Primitive, types::Type};
+use crate::location::Span;
 use indexmap::IndexMap;
 use std::{
-    fmt::{self, Display, Write},
-    hash::Hash,
+    fmt::{self, Write},
     sync::Arc,
 };
 
 #[derive(Clone, Debug)]
-pub enum Process<Name, Typ> {
+pub enum Process<Typ> {
     Let {
         span: Span,
         name: Name,
-        annotation: Option<Type<Name>>,
+        annotation: Option<Type>,
         typ: Typ,
-        value: Arc<Expression<Name, Typ>>,
+        value: Arc<Expression<Typ>>,
         then: Arc<Self>,
     },
     Do {
         span: Span,
         name: Name,
         typ: Typ,
-        command: Command<Name, Typ>,
+        command: Command<Typ>,
     },
     Telltypes(Span, Arc<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Command<Name, Typ> {
-    Link(Arc<Expression<Name, Typ>>),
-    Send(Arc<Expression<Name, Typ>>, Arc<Process<Name, Typ>>),
-    Receive(Name, Option<Type<Name>>, Typ, Arc<Process<Name, Typ>>),
-    Choose(Name, Arc<Process<Name, Typ>>),
-    Match(Arc<[Name]>, Box<[Arc<Process<Name, Typ>>]>),
+pub enum Command<Typ> {
+    Link(Arc<Expression<Typ>>),
+    Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
+    Receive(Name, Option<Type>, Typ, Arc<Process<Typ>>),
+    Choose(Name, Arc<Process<Typ>>),
+    Match(Arc<[Name]>, Box<[Arc<Process<Typ>>]>),
     Break,
-    Continue(Arc<Process<Name, Typ>>),
+    Continue(Arc<Process<Typ>>),
     Begin {
         unfounded: bool,
         label: Option<Name>,
-        captures: Captures<Name>,
-        body: Arc<Process<Name, Typ>>,
+        captures: Captures,
+        body: Arc<Process<Typ>>,
     },
-    Loop(Option<Name>, Captures<Name>),
-    SendType(Type<Name>, Arc<Process<Name, Typ>>),
-    ReceiveType(Name, Arc<Process<Name, Typ>>),
+    Loop(Option<Name>, Captures),
+    SendType(Type, Arc<Process<Typ>>),
+    ReceiveType(Name, Arc<Process<Typ>>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression<Name, Typ> {
+pub enum Expression<Typ> {
     Reference(Span, Name, Typ),
     Fork {
         span: Span,
-        captures: Captures<Name>,
+        captures: Captures,
         chan_name: Name,
-        chan_annotation: Option<Type<Name>>,
+        chan_annotation: Option<Type>,
         chan_type: Typ,
         expr_type: Typ,
-        process: Arc<Process<Name, Typ>>,
+        process: Arc<Process<Typ>>,
     },
     Primitive(Span, Primitive, Typ),
 }
 
 #[derive(Clone, Debug)]
-pub struct Captures<Name> {
+pub struct Captures {
     pub names: IndexMap<Name, Span>,
 }
 
-impl<Name> Default for Captures<Name> {
+impl Default for Captures {
     fn default() -> Self {
         Self {
             names: IndexMap::new(),
@@ -74,7 +73,7 @@ impl<Name> Default for Captures<Name> {
     }
 }
 
-impl<Name: Hash + Eq> Captures<Name> {
+impl Captures {
     pub fn new() -> Self {
         Self {
             names: IndexMap::new(),
@@ -102,11 +101,11 @@ impl<Name: Hash + Eq> Captures<Name> {
     }
 }
 
-impl<Name: Clone + Hash + Eq, Typ: Clone> Process<Name, Typ> {
+impl<Typ: Clone> Process<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<Name>, Captures<Name>>,
-    ) -> (Arc<Self>, Captures<Name>) {
+        loop_points: &IndexMap<Option<Name>, Captures>,
+    ) -> (Arc<Self>, Captures) {
         match self {
             Self::Let {
                 span: loc,
@@ -242,7 +241,7 @@ impl<Name: Clone + Hash + Eq, Typ: Clone> Process<Name, Typ> {
     }
 }
 
-impl<Name: Clone + Spanning, Typ: Clone> Process<Name, Typ> {
+impl<Typ: Clone> Process<Typ> {
     pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
         match self {
             Process::Let {
@@ -269,11 +268,8 @@ impl<Name: Clone + Spanning, Typ: Clone> Process<Name, Typ> {
     }
 }
 
-impl<Name: Clone + Hash + Eq, Typ: Clone> Command<Name, Typ> {
-    pub fn fix_captures(
-        &self,
-        loop_points: &IndexMap<Option<Name>, Captures<Name>>,
-    ) -> (Self, Captures<Name>) {
+impl<Typ: Clone> Command<Typ> {
+    pub fn fix_captures(&self, loop_points: &IndexMap<Option<Name>, Captures>) -> (Self, Captures) {
         match self {
             Self::Link(expression) => {
                 let (expression, caps) = expression.fix_captures(loop_points);
@@ -351,7 +347,7 @@ impl<Name: Clone + Hash + Eq, Typ: Clone> Command<Name, Typ> {
     }
 }
 
-impl<Name: Clone + Spanning, Typ: Clone> Command<Name, Typ> {
+impl<Typ: Clone> Command<Typ> {
     pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
         match self {
             Self::Link(expression) => {
@@ -391,11 +387,11 @@ impl<Name: Clone + Spanning, Typ: Clone> Command<Name, Typ> {
     }
 }
 
-impl<Name: Clone + Hash + Eq, Typ: Clone> Expression<Name, Typ> {
+impl<Typ: Clone> Expression<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<Name>, Captures<Name>>,
-    ) -> (Arc<Self>, Captures<Name>) {
+        loop_points: &IndexMap<Option<Name>, Captures>,
+    ) -> (Arc<Self>, Captures) {
         match self {
             Self::Reference(loc, name, typ) => (
                 Arc::new(Self::Reference(loc.clone(), name.clone(), typ.clone())),
@@ -461,7 +457,7 @@ impl<Name: Clone + Hash + Eq, Typ: Clone> Expression<Name, Typ> {
     }
 }
 
-impl<Name: Clone + Spanning, Typ: Clone> Expression<Name, Typ> {
+impl<Typ: Clone> Expression<Typ> {
     pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
         match self {
             Self::Reference(_, name, typ) => {
@@ -481,7 +477,7 @@ impl<Name: Clone + Spanning, Typ: Clone> Expression<Name, Typ> {
     }
 }
 
-impl<Name, Typ: Clone> Expression<Name, Typ> {
+impl<Typ: Clone> Expression<Typ> {
     pub fn get_type(&self) -> Typ {
         match self {
             Self::Reference(_, _, typ) => typ.clone(),
@@ -491,7 +487,7 @@ impl<Name, Typ: Clone> Expression<Name, Typ> {
     }
 }
 
-impl<Name: Display, Typ> Process<Name, Typ> {
+impl<Typ> Process<Typ> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Let {
@@ -625,7 +621,7 @@ impl<Name: Display, Typ> Process<Name, Typ> {
     }
 }
 
-impl<Name: Display, Typ> Expression<Name, Typ> {
+impl<Typ> Expression<Typ> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Reference(_, name, _) => {

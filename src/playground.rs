@@ -14,7 +14,7 @@ use crate::par::program::{Definition, NameWithType, Program, TypeOnHover};
 use crate::{
     icombs::{compile_file, IcCompiled},
     par::{
-        language::{CompileError, Name},
+        language::CompileError,
         parse::{parse_program, SyntaxError},
         process::Expression,
         types::TypeError,
@@ -77,9 +77,7 @@ impl Compiled {
             })
     }
 
-    pub(crate) fn from_program(
-        program: Program<Name, Arc<Expression<Name, ()>>>,
-    ) -> Result<Self, Error> {
+    pub(crate) fn from_program(program: Program<Arc<Expression<()>>>) -> Result<Self, Error> {
         let pretty = program
             .definitions
             .iter()
@@ -112,14 +110,14 @@ impl Compiled {
 
 #[derive(Clone)]
 pub(crate) struct Checked {
-    pub(crate) program: Arc<CheckedProgram<Name>>,
-    pub(crate) type_on_hover: Arc<TypeOnHover<Name>>,
+    pub(crate) program: Arc<CheckedProgram>,
+    pub(crate) type_on_hover: Arc<TypeOnHover>,
     pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
 }
 
 impl Checked {
     pub(crate) fn from_program(
-        program: CheckedProgram<Name>,
+        program: CheckedProgram,
     ) -> Result<Self, crate::icombs::compiler::Error> {
         // attempt to compile to interaction combinators
         Ok(Checked {
@@ -135,7 +133,7 @@ pub(crate) enum Error {
     Parse(SyntaxError),
     Compile(CompileError),
     InetCompile(crate::icombs::compiler::Error),
-    Type(TypeError<Name>),
+    Type(TypeError),
 }
 
 impl Playground {
@@ -305,7 +303,7 @@ impl Playground {
     fn readback(
         readback_state: &mut Option<ReadbackState>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedProgram<Name>>,
+        program: Arc<CheckedProgram>,
         compiled: &IcCompiled,
     ) {
         for (name, _) in &program.definitions {

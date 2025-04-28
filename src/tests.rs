@@ -69,7 +69,7 @@ pub struct TestingState {
     pub shared: SharedState,
     pub spawner: Arc<dyn Spawn + Send + Sync>,
     pub net: Arc<Mutex<Net>>,
-    pub prog: Arc<CheckedProgram<Name>>,
+    pub prog: Arc<CheckedProgram>,
 }
 
 impl TestingState {

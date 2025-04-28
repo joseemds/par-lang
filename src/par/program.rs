@@ -1,55 +1,53 @@
-use std::{hash::Hash, sync::Arc};
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 
 use crate::location::{Span, Spanning};
 
 use super::{
+    language::Name,
     process,
     types::{Context, Type, TypeDefs, TypeError},
 };
 
 #[derive(Clone, Debug)]
-pub struct Program<Name, Expr> {
-    pub type_defs: Vec<TypeDef<Name>>,
-    pub declarations: Vec<Declaration<Name>>,
-    pub definitions: Vec<Definition<Name, Expr>>,
+pub struct Program<Expr> {
+    pub type_defs: Vec<TypeDef>,
+    pub declarations: Vec<Declaration>,
+    pub definitions: Vec<Definition<Expr>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckedProgram<Name> {
-    pub type_defs: TypeDefs<Name>,
-    pub declarations: IndexMap<Name, Declaration<Name>>,
-    pub definitions: IndexMap<Name, Definition<Name, Arc<process::Expression<Name, Type<Name>>>>>,
+pub struct CheckedProgram {
+    pub type_defs: TypeDefs,
+    pub declarations: IndexMap<Name, Declaration>,
+    pub definitions: IndexMap<Name, Definition<Arc<process::Expression<Type>>>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct TypeDef<Name> {
+pub struct TypeDef {
     pub span: Span,
     pub name: Name,
     pub params: Vec<Name>,
-    pub typ: Type<Name>,
+    pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
-pub struct Declaration<Name> {
+pub struct Declaration {
     pub span: Span,
     pub name: Name,
-    pub typ: Type<Name>,
+    pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
-pub struct Definition<Name, Expr> {
+pub struct Definition<Expr> {
     pub span: Span,
     pub name: Name,
     pub expression: Expr,
 }
 
-impl<Name> Program<Name, Arc<process::Expression<Name, ()>>>
-where
-    Name: Clone + Eq + Hash,
-{
-    pub fn type_check(&self) -> Result<CheckedProgram<Name>, TypeError<Name>> {
+impl Program<Arc<process::Expression<()>>> {
+    pub fn type_check(&self) -> Result<CheckedProgram, TypeError> {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
@@ -124,7 +122,7 @@ where
     }
 }
 
-impl<Name, Expr> Default for Program<Name, Expr> {
+impl<Expr> Default for Program<Expr> {
     fn default() -> Self {
         Self {
             type_defs: Vec::new(),
@@ -135,14 +133,14 @@ impl<Name, Expr> Default for Program<Name, Expr> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType<Name>(pub Name, pub Type<Name>);
+pub struct NameWithType(pub Name, pub Type);
 
-pub struct TypeOnHover<Name> {
-    sorted_pairs: Vec<(Span, NameWithType<Name>)>,
+pub struct TypeOnHover {
+    sorted_pairs: Vec<(Span, NameWithType)>,
 }
 
-impl<Name: Clone + Spanning> TypeOnHover<Name> {
-    pub fn new(program: &CheckedProgram<Name>) -> Self {
+impl TypeOnHover {
+    pub fn new(program: &CheckedProgram) -> Self {
         let mut pairs = Vec::new();
 
         for (_, definition) in &program.definitions {
@@ -160,8 +158,8 @@ impl<Name: Clone + Spanning> TypeOnHover<Name> {
     }
 }
 
-impl<Name: Clone> TypeOnHover<Name> {
-    pub fn query(&self, row: usize, column: usize) -> Option<NameWithType<Name>> {
+impl TypeOnHover {
+    pub fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
         // find index with the greatest start that is <= than (row, column)
         let (mut lo, mut hi) = (0, self.sorted_pairs.len());
         while lo + 1 < hi {

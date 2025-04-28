@@ -22,7 +22,7 @@ pub struct CoroState {
     pub(crate) net: Arc<Mutex<Net>>,
     new_redex: Mutex<Vec<futures::channel::mpsc::Sender<()>>>,
     new_var: AtomicUsize,
-    type_defs: TypeDefs<Name>,
+    type_defs: TypeDefs,
 }
 
 impl Debug for CoroState {
@@ -72,7 +72,7 @@ fn do_copy(
 }
 
 impl SharedState {
-    pub fn with_net(net: Arc<Mutex<Net>>, type_defs: TypeDefs<Name>) -> Self {
+    pub fn with_net(net: Arc<Mutex<Net>>, type_defs: TypeDefs) -> Self {
         Self {
             shared: Arc::new(CoroState {
                 net,
@@ -356,11 +356,11 @@ impl SharedState {
         self.as_with_type(port, ty).await
     }
 
-    pub fn type_defs(&self) -> &TypeDefs<Name> {
+    pub fn type_defs(&self) -> &TypeDefs {
         &self.shared.type_defs
     }
 
-    pub fn as_with_type(&self, port: PortContents, ty: Type<Name>) -> BoxFuture<ReadbackResult> {
+    pub fn as_with_type(&self, port: PortContents, ty: Type) -> BoxFuture<ReadbackResult> {
         async move {
             let tree = match port {
                 PortContents::Aux(tx) => {

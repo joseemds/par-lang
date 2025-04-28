@@ -46,49 +46,49 @@ impl Name {
 }
 
 #[derive(Clone, Debug)]
-pub enum Pattern<Name> {
-    Name(Span, Name, Option<Type<Name>>),
+pub enum Pattern {
+    Name(Span, Name, Option<Type>),
     Receive(Span, Box<Self>, Box<Self>),
     Continue(Span),
     ReceiveType(Span, Name, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression<Name> {
+pub enum Expression {
     Primitive(Span, Primitive),
     Reference(Span, Name),
     Grouped(Span, Box<Self>),
     Let {
         span: Span,
-        pattern: Pattern<Name>,
+        pattern: Pattern,
         expression: Box<Self>,
         then: Box<Self>,
     },
     Do {
         span: Span,
-        process: Box<Process<Name>>,
+        process: Box<Process>,
         then: Box<Self>,
     },
     Fork {
         span: Span,
         channel: Name,
-        annotation: Option<Type<Name>>,
-        process: Box<Process<Name>>,
+        annotation: Option<Type>,
+        process: Box<Process>,
     },
-    Construction(Construct<Name>),
-    Application(Span, Box<Self>, Apply<Name>),
+    Construction(Construct),
+    Application(Span, Box<Self>, Apply),
 }
 
 #[derive(Clone, Debug)]
-pub enum Construct<Name> {
+pub enum Construct {
     /// wraps an expression
-    Then(Box<Expression<Name>>),
-    Send(Span, Box<Expression<Name>>, Box<Self>),
-    Receive(Span, Pattern<Name>, Box<Self>),
+    Then(Box<Expression>),
+    Send(Span, Box<Expression>, Box<Self>),
+    Receive(Span, Pattern, Box<Self>),
     /// constructs an either type
     Choose(Span, Name, Box<Self>),
     /// constructs a choice type
-    Either(Span, ConstructBranches<Name>),
+    Either(Span, ConstructBranches),
     /// ! (unit)
     Break(Span),
     Begin {
@@ -98,26 +98,26 @@ pub enum Construct<Name> {
         then: Box<Self>,
     },
     Loop(Span, Option<Name>),
-    SendType(Span, Type<Name>, Box<Self>),
+    SendType(Span, Type, Box<Self>),
     ReceiveType(Span, Name, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct ConstructBranches<Name>(pub IndexMap<Name, ConstructBranch<Name>>);
+pub struct ConstructBranches(pub IndexMap<Name, ConstructBranch>);
 
 #[derive(Clone, Debug)]
-pub enum ConstructBranch<Name> {
-    Then(Span, Expression<Name>),
-    Receive(Span, Pattern<Name>, Box<Self>),
+pub enum ConstructBranch {
+    Then(Span, Expression),
+    Receive(Span, Pattern, Box<Self>),
     ReceiveType(Span, Name, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Apply<Name> {
+pub enum Apply {
     Noop(Point),
-    Send(Span, Box<Expression<Name>>, Box<Self>),
+    Send(Span, Box<Expression>, Box<Self>),
     Choose(Span, Name, Box<Self>),
-    Either(Span, ApplyBranches<Name>),
+    Either(Span, ApplyBranches),
     Begin {
         span: Span,
         unfounded: bool,
@@ -125,44 +125,44 @@ pub enum Apply<Name> {
         then: Box<Self>,
     },
     Loop(Span, Option<Name>),
-    SendType(Span, Type<Name>, Box<Self>),
+    SendType(Span, Type, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct ApplyBranches<Name>(pub IndexMap<Name, ApplyBranch<Name>>);
+pub struct ApplyBranches(pub IndexMap<Name, ApplyBranch>);
 
 #[derive(Clone, Debug)]
-pub enum ApplyBranch<Name> {
-    Then(Span, Name, Expression<Name>),
-    Receive(Span, Pattern<Name>, Box<Self>),
-    Continue(Span, Expression<Name>),
+pub enum ApplyBranch {
+    Then(Span, Name, Expression),
+    Receive(Span, Pattern, Box<Self>),
+    Continue(Span, Expression),
     ReceiveType(Span, Name, Box<Self>),
 }
 
 // span doesn't include the "then" process
 #[derive(Clone, Debug)]
-pub enum Process<Name> {
+pub enum Process {
     Let {
         span: Span,
-        pattern: Pattern<Name>,
-        value: Box<Expression<Name>>,
+        pattern: Pattern,
+        value: Box<Expression>,
         then: Box<Self>,
     },
-    Command(Name, Command<Name>),
+    Command(Name, Command),
     Telltypes(Span, Box<Self>),
     Noop(Point),
 }
 
 #[derive(Clone, Debug)]
-pub enum Command<Name> {
-    Then(Box<Process<Name>>),
-    Link(Span, Box<Expression<Name>>),
-    Send(Span, Expression<Name>, Box<Self>),
-    Receive(Span, Pattern<Name>, Box<Self>),
+pub enum Command {
+    Then(Box<Process>),
+    Link(Span, Box<Expression>),
+    Send(Span, Expression, Box<Self>),
+    Receive(Span, Pattern, Box<Self>),
     Choose(Span, Name, Box<Self>),
-    Either(Span, CommandBranches<Name>, Option<Box<Process<Name>>>),
+    Either(Span, CommandBranches, Option<Box<Process>>),
     Break(Span),
-    Continue(Span, Box<Process<Name>>),
+    Continue(Span, Box<Process>),
     Begin {
         span: Span,
         unfounded: bool,
@@ -170,18 +170,18 @@ pub enum Command<Name> {
         then: Box<Self>,
     },
     Loop(Span, Option<Name>),
-    SendType(Span, Type<Name>, Box<Self>),
+    SendType(Span, Type, Box<Self>),
     ReceiveType(Span, Name, Box<Self>),
 }
 
 #[derive(Clone, Debug)]
-pub struct CommandBranches<Name>(pub IndexMap<Name, CommandBranch<Name>>);
+pub struct CommandBranches(pub IndexMap<Name, CommandBranch>);
 
 #[derive(Clone, Debug)]
-pub enum CommandBranch<Name> {
-    Then(Span, Process<Name>),
-    Receive(Span, Pattern<Name>, Box<Self>),
-    Continue(Span, Process<Name>),
+pub enum CommandBranch {
+    Then(Span, Process),
+    Receive(Span, Pattern, Box<Self>),
+    Continue(Span, Process),
     ReceiveType(Span, Name, Box<Self>),
 }
 
@@ -230,15 +230,15 @@ impl Spanning for CompileError {
     }
 }
 
-type Pass<Name> = Option<Arc<process::Process<Name, ()>>>;
+type Pass = Option<Arc<process::Process<()>>>;
 
-impl Pattern<Name> {
+impl Pattern {
     pub fn compile_let(
         &self,
         span: &Span,
-        expression: Arc<process::Expression<Name, ()>>,
-        process: Arc<process::Process<Name, ()>>,
-    ) -> Arc<process::Process<Name, ()>> {
+        expression: Arc<process::Expression<()>>,
+        process: Arc<process::Process<()>>,
+    ) -> Arc<process::Process<()>> {
         if let Self::Name(_, name, annotation) = self {
             return Arc::new(process::Process::Let {
                 span: span.clone(),
@@ -264,8 +264,8 @@ impl Pattern<Name> {
         level: usize,
         span: &Span,
         subject: &Name,
-        process: Arc<process::Process<Name, ()>>,
-    ) -> Arc<process::Process<Name, ()>> {
+        process: Arc<process::Process<()>>,
+    ) -> Arc<process::Process<()>> {
         if let Self::Name(_, name, annotation) = self {
             return Arc::new(process::Process::Do {
                 span: span.clone(),
@@ -290,8 +290,8 @@ impl Pattern<Name> {
     fn compile_helper(
         &self,
         level: usize,
-        process: Arc<process::Process<Name, ()>>,
-    ) -> Arc<process::Process<Name, ()>> {
+        process: Arc<process::Process<()>>,
+    ) -> Arc<process::Process<()>> {
         match self {
             Self::Name(span, name, annotation) => Arc::new(process::Process::Let {
                 span: span.clone(),
@@ -332,7 +332,7 @@ impl Pattern<Name> {
         }
     }
 
-    fn annotation(&self) -> Option<Type<Name>> {
+    fn annotation(&self) -> Option<Type> {
         match self {
             Self::Name(_, _, annotation) => annotation.clone(),
             Self::Receive(span, first, rest) => {
@@ -353,7 +353,7 @@ impl Pattern<Name> {
     }
 }
 
-impl<Name> Spanning for Pattern<Name> {
+impl Spanning for Pattern {
     fn span(&self) -> Span {
         match self {
             Self::Name(span, _, _)
@@ -364,8 +364,8 @@ impl<Name> Spanning for Pattern<Name> {
     }
 }
 
-impl Expression<Name> {
-    pub fn compile(&self) -> Result<Arc<process::Expression<Name, ()>>, CompileError> {
+impl Expression {
+    pub fn compile(&self) -> Result<Arc<process::Expression<()>>, CompileError> {
         Ok(match self {
             Self::Primitive(span, value) => Arc::new(process::Expression::Primitive(
                 span.clone(),
@@ -486,7 +486,7 @@ impl Expression<Name> {
     }
 }
 
-impl<Name> Spanning for Expression<Name> {
+impl Spanning for Expression {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
@@ -502,8 +502,8 @@ impl<Name> Spanning for Expression<Name> {
     }
 }
 
-impl Construct<Name> {
-    pub fn compile(&self) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+impl Construct {
+    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(expression) => {
                 let span = expression.span().clone();
@@ -616,7 +616,7 @@ impl Construct<Name> {
     }
 }
 
-impl<Name> Spanning for Construct<Name> {
+impl Spanning for Construct {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
@@ -634,8 +634,8 @@ impl<Name> Spanning for Construct<Name> {
     }
 }
 
-impl ConstructBranch<Name> {
-    pub fn compile(&self) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+impl ConstructBranch {
+    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, expression) => {
                 let expression = expression.compile()?;
@@ -665,7 +665,7 @@ impl ConstructBranch<Name> {
     }
 }
 
-impl<Name> Spanning for ConstructBranch<Name> {
+impl Spanning for ConstructBranch {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _) | Self::Receive(span, _, _) | Self::ReceiveType(span, _, _) => {
@@ -675,8 +675,8 @@ impl<Name> Spanning for ConstructBranch<Name> {
     }
 }
 
-impl Apply<Name> {
-    pub fn compile(&self) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+impl Apply {
+    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Noop(point) => {
                 let span = point.point_span();
@@ -770,7 +770,7 @@ impl Apply<Name> {
     }
 }
 
-impl Spanning for Apply<Name> {
+impl Spanning for Apply {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
@@ -785,8 +785,8 @@ impl Spanning for Apply<Name> {
     }
 }
 
-impl ApplyBranch<Name> {
-    pub fn compile(&self) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+impl ApplyBranch {
+    pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(span, name, expression) => {
                 let expression = expression.compile()?;
@@ -842,7 +842,7 @@ impl ApplyBranch<Name> {
     }
 }
 
-impl<Name> Spanning for ApplyBranch<Name> {
+impl Spanning for ApplyBranch {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _, _)
@@ -853,11 +853,8 @@ impl<Name> Spanning for ApplyBranch<Name> {
     }
 }
 
-impl Process<Name> {
-    pub fn compile(
-        &self,
-        pass: Pass<Name>,
-    ) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+impl Process {
+    pub fn compile(&self, pass: Pass) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Let {
                 span,
@@ -881,7 +878,7 @@ impl Process<Name> {
     }
 }
 
-impl<Name> Spanning for Process<Name> {
+impl Spanning for Process {
     fn span(&self) -> Span {
         match self {
             Self::Let { span, .. } | Self::Telltypes(span, _) => span.clone(),
@@ -892,12 +889,12 @@ impl<Name> Spanning for Process<Name> {
     }
 }
 
-impl Command<Name> {
+impl Command {
     pub fn compile(
         &self,
         object_name: &Name,
-        pass: Pass<Name>,
-    ) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+        pass: Pass,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(process) => process.compile(pass)?,
 
@@ -1026,7 +1023,7 @@ impl Command<Name> {
     }
 }
 
-impl<Name> Spanning for Command<Name> {
+impl Spanning for Command {
     fn span(&self) -> Span {
         match self {
             Self::Link(span, _)
@@ -1046,12 +1043,12 @@ impl<Name> Spanning for Command<Name> {
     }
 }
 
-impl CommandBranch<Name> {
+impl CommandBranch {
     pub fn compile(
         &self,
         object_name: &Name,
-        pass: Pass<Name>,
-    ) -> Result<Arc<process::Process<Name, ()>>, CompileError> {
+        pass: Pass,
+    ) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
             Self::Then(_, process) => process.compile(pass)?,
 
@@ -1083,7 +1080,7 @@ impl CommandBranch<Name> {
     }
 }
 
-impl<Name> Spanning for CommandBranch<Name> {
+impl Spanning for CommandBranch {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _)

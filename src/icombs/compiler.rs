@@ -41,7 +41,7 @@ pub enum Error {
     UnboundVar(Span),
     /// Error that is emitted when a linear variable is not used
     UnusedVar(Span),
-    UnexpectedType(Span, Type<Name>),
+    UnexpectedType(Span, Type),
     GlobalNotFound(Name),
     DependencyCycle {
         global: Name,
@@ -95,7 +95,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone)]
 pub struct TypedTree {
     pub tree: Tree,
-    pub ty: Type<Name>,
+    pub ty: Type,
 }
 
 impl Default for TypedTree {
@@ -131,7 +131,7 @@ pub struct Context {
 
 pub struct PackData {
     names: Vec<Var>,
-    types: Vec<Type<Name>>,
+    types: Vec<Type>,
     kinds: Vec<VariableKind>,
     loop_points: IndexMap<LoopLabel, Vec<LoopLabel>>,
     unguarded_loop_labels: Vec<LoopLabel>,
@@ -140,7 +140,7 @@ pub struct PackData {
 impl Context {
     pub fn pack(
         &mut self,
-        captures: Option<&Captures<Name>>,
+        captures: Option<&Captures>,
         labels_in_scope: Option<&Vec<LoopLabel>>,
         net: &mut Net,
     ) -> (Tree, PackData) {
@@ -213,17 +213,17 @@ impl Context {
 pub struct Compiler {
     net: Net,
     context: Context,
-    type_defs: TypeDefs<Name>,
-    definitions: IndexMap<Name, Definition<Name, Arc<Expression<Name, Type<Name>>>>>,
+    type_defs: TypeDefs,
+    definitions: IndexMap<Name, Definition<Arc<Expression<Type>>>>,
     global_name_to_id: IndexMap<Name, usize>,
-    id_to_ty: Vec<Type<Name>>,
+    id_to_ty: Vec<Type>,
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
     compile_global_stack: IndexSet<Name>,
 }
 
 impl Tree {
-    pub(crate) fn with_type(self, ty: Type<Name>) -> TypedTree {
+    pub(crate) fn with_type(self, ty: Type) -> TypedTree {
         TypedTree { tree: self, ty }
     }
 }
@@ -322,7 +322,7 @@ impl Compiler {
         &mut self,
         f: impl FnOnce(&mut Self, usize) -> Result<TypedTree>,
         //debug: bool,
-    ) -> Result<(usize, Type<Name>)> {
+    ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
         // Allocate package
@@ -380,7 +380,7 @@ impl Compiler {
 
     fn with_captures<T>(
         &mut self,
-        captures: &Captures<Name>,
+        captures: &Captures,
         f: impl FnOnce(&mut Self) -> Result<T>,
     ) -> Result<T> {
         let mut vars = IndexMap::new();
@@ -471,7 +471,7 @@ impl Compiler {
         }
     }
 
-    fn create_typed_wire(&mut self, t: Type<Name>) -> (TypedTree, TypedTree) {
+    fn create_typed_wire(&mut self, t: Type) -> (TypedTree, TypedTree) {
         let (v0, v1) = self.net.create_wire();
         (
             TypedTree {
@@ -527,7 +527,7 @@ impl Compiler {
         )
     }
 
-    fn normalize_type(&mut self, ty: Type<Name>) -> Type<Name> {
+    fn normalize_type(&mut self, ty: Type) -> Type {
         match ty {
             Type::Name(loc, name, args) => {
                 if self.type_defs.vars.contains(&name) {
@@ -567,7 +567,7 @@ impl Compiler {
         }
     }
 
-    fn compile_expression(&mut self, expr: &Expression<Name, Type<Name>>) -> Result<TypedTree> {
+    fn compile_expression(&mut self, expr: &Expression<Type>) -> Result<TypedTree> {
         match expr {
             Expression::Reference(_, name, _) => self.instantiate_name(name, false),
 
@@ -600,7 +600,7 @@ impl Compiler {
         }
     }
 
-    fn compile_process(&mut self, proc: &Process<Name, Type<Name>>) -> Result<()> {
+    fn compile_process(&mut self, proc: &Process<Type>) -> Result<()> {
         /*let debug = false;
         if debug {
             let mut s = String::new();
@@ -632,8 +632,8 @@ impl Compiler {
         &mut self,
         span: &Span,
         name: Name,
-        ty: Type<Name>,
-        cmd: &Command<Name, Type<Name>>,
+        ty: Type,
+        cmd: &Command<Type>,
     ) -> Result<()> {
         //println!("{:?}", loc);
         match cmd {
@@ -841,7 +841,7 @@ impl Compiler {
     }
 }
 
-pub fn compile_file(program: &CheckedProgram<Name>) -> Result<IcCompiled> {
+pub fn compile_file(program: &CheckedProgram) -> Result<IcCompiled> {
     let mut compiler = Compiler {
         net: Net::default(),
         context: Context {
@@ -873,7 +873,7 @@ pub fn compile_file(program: &CheckedProgram<Name>) -> Result<IcCompiled> {
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
     pub(crate) name_to_id: IndexMap<Name, usize>,
-    pub(crate) id_to_ty: IndexMap<usize, Type<Name>>,
+    pub(crate) id_to_ty: IndexMap<usize, Type>,
 }
 
 impl Display for IcCompiled {
@@ -897,7 +897,7 @@ impl IcCompiled {
         self.id_to_package.get(id).cloned()
     }
 
-    pub fn get_type_of(&self, name: &Name) -> Option<Type<Name>> {
+    pub fn get_type_of(&self, name: &Name) -> Option<Type> {
         let id = self.name_to_id.get(name)?;
         self.id_to_ty.get(id).cloned()
     }

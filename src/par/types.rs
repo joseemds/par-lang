@@ -1,17 +1,16 @@
 use indexmap::{IndexMap, IndexSet};
 use std::{
     collections::HashSet,
-    fmt::{self, Display, Write},
-    hash::Hash,
+    fmt::{self, Write},
     sync::{Arc, RwLock},
 };
 
-use super::process;
+use super::{language::Name, process};
 use crate::location::{Span, Spanning};
 use miette::LabeledSpan;
 
 #[derive(Clone, Debug)]
-pub enum TypeError<Name> {
+pub enum TypeError {
     TypeNameAlreadyDefined(Span, Span, Name),
     NameAlreadyDeclared(Span, Span, Name),
     NameAlreadyDefined(Span, Span, Name),
@@ -25,22 +24,22 @@ pub enum TypeError<Name> {
     ShadowedObligation(Span, Name),
     TypeMustBeKnownAtThisPoint(Span, Name),
     ParameterTypeMustBeKnown(Span, Name, Name),
-    CannotAssignFromTo(Span, Type<Name>, Type<Name>),
+    CannotAssignFromTo(Span, Type, Type),
     UnfulfilledObligations(Span, Vec<Name>),
-    InvalidOperation(Span, Operation<Name>, Type<Name>),
-    InvalidBranch(Span, Name, Type<Name>),
-    MissingBranch(Span, Name, Type<Name>),
-    RedundantBranch(Span, Name, Type<Name>),
-    TypesCannotBeUnified(Type<Name>, Type<Name>),
+    InvalidOperation(Span, Operation, Type),
+    InvalidBranch(Span, Name, Type),
+    MissingBranch(Span, Name, Type),
+    RedundantBranch(Span, Name, Type),
+    TypesCannotBeUnified(Type, Type),
     NoSuchLoopPoint(Span, Option<Name>),
     DoesNotDescendSubjectOfBegin(Span, Option<Name>),
     LoopVariableNotPreserved(Span, Name),
-    LoopVariableChangedType(Span, Name, Type<Name>, Type<Name>),
-    Telltypes(Span, IndexMap<Name, Type<Name>>),
+    LoopVariableChangedType(Span, Name, Type, Type),
+    Telltypes(Span, IndexMap<Name, Type>),
 }
 
 #[derive(Clone, Debug)]
-pub enum Operation<Name> {
+pub enum Operation {
     Send(Span),
     Receive(Span),
     Choose(Span, Name),
@@ -54,13 +53,13 @@ pub enum Operation<Name> {
 }
 
 #[derive(Clone, Debug)]
-pub enum Type<Name> {
+pub enum Type {
     Primitive(Span, PrimitiveType),
     Chan(Span, Box<Self>),
     /// type variable
     Var(Span, Name),
     /// named type
-    Name(Span, Name, Vec<Type<Name>>),
+    Name(Span, Name, Vec<Type>),
     Send(Span, Box<Self>, Box<Self>),
     Receive(Span, Box<Self>, Box<Self>),
     Either(Span, IndexMap<Name, Self>),
@@ -98,12 +97,12 @@ pub enum PrimitiveType {
 }
 
 #[derive(Clone, Debug)]
-pub struct TypeDefs<Name> {
-    pub globals: Arc<IndexMap<Name, (Span, Vec<Name>, Type<Name>)>>,
+pub struct TypeDefs {
+    pub globals: Arc<IndexMap<Name, (Span, Vec<Name>, Type)>>,
     pub vars: IndexSet<Name>,
 }
 
-impl<Name: Clone + Eq + Hash> Default for TypeDefs<Name> {
+impl Default for TypeDefs {
     fn default() -> Self {
         Self {
             globals: Default::default(),
@@ -112,10 +111,10 @@ impl<Name: Clone + Eq + Hash> Default for TypeDefs<Name> {
     }
 }
 
-impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
+impl TypeDefs {
     pub fn new_with_validation<'a>(
-        globals: impl Iterator<Item = (&'a Span, &'a Name, &'a Vec<Name>, &'a Type<Name>)>,
-    ) -> Result<Self, TypeError<Name>>
+        globals: impl Iterator<Item = (&'a Span, &'a Name, &'a Vec<Name>, &'a Type)>,
+    ) -> Result<Self, TypeError>
     where
         Name: 'a,
     {
@@ -153,12 +152,7 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
         Ok(type_defs)
     }
 
-    pub fn get(
-        &self,
-        span: &Span,
-        name: &Name,
-        args: &[Type<Name>],
-    ) -> Result<Type<Name>, TypeError<Name>> {
+    pub fn get(&self, span: &Span, name: &Name, args: &[Type]) -> Result<Type, TypeError> {
         if self.vars.contains(name) {
             if !args.is_empty() {
                 return Err(TypeError::WrongNumberOfTypeArgs(
@@ -190,12 +184,7 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
         }
     }
 
-    pub fn get_dual(
-        &self,
-        span: &Span,
-        name: &Name,
-        args: &[Type<Name>],
-    ) -> Result<Type<Name>, TypeError<Name>> {
+    pub fn get_dual(&self, span: &Span, name: &Name, args: &[Type]) -> Result<Type, TypeError> {
         if self.vars.contains(name) {
             if !args.is_empty() {
                 return Err(TypeError::WrongNumberOfTypeArgs(
@@ -232,11 +221,11 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
 
     fn validate_type(
         &self,
-        typ: &Type<Name>,
+        typ: &Type,
         deps: &IndexSet<Name>,
         self_pos: &IndexSet<Option<Name>>,
         self_neg: &IndexSet<Option<Name>>,
-    ) -> Result<(), TypeError<Name>> {
+    ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) => (),
             Type::Chan(_, t) => self.validate_type(t, deps, self_neg, self_pos)?,
@@ -300,7 +289,7 @@ impl<Name: Clone + Eq + Hash> TypeDefs<Name> {
     }
 }
 
-impl<Name> Spanning for Type<Name> {
+impl Spanning for Type {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
@@ -322,78 +311,8 @@ impl<Name> Spanning for Type<Name> {
     }
 }
 
-impl<Name: Eq + Hash> Type<Name> {
-    pub fn map_names<N: Eq + Hash>(self, f: &mut impl FnMut(Name) -> N) -> Type<N> {
-        match self {
-            Self::Primitive(span, p) => Type::Primitive(span, p),
-            Self::Chan(span, t) => Type::Chan(span, Box::new(t.map_names(f))),
-            Self::Var(span, name) => Type::Var(span, f(name)),
-            Self::Name(span, name, args) => Type::Name(
-                span,
-                f(name),
-                args.into_iter().map(|arg| arg.map_names(f)).collect(),
-            ),
-            Self::Send(loc, t, u) => {
-                Type::Send(loc, Box::new(t.map_names(f)), Box::new(u.map_names(f)))
-            }
-            Self::Receive(loc, t, u) => {
-                Type::Receive(loc, Box::new(t.map_names(f)), Box::new(u.map_names(f)))
-            }
-            Self::Either(span, branches) => Type::Either(
-                span,
-                branches
-                    .into_iter()
-                    .map(|(branch, typ)| (f(branch), typ.map_names(f)))
-                    .collect(),
-            ),
-            Self::Choice(span, branches) => Type::Choice(
-                span,
-                branches
-                    .into_iter()
-                    .map(|(branch, typ)| (f(branch), typ.map_names(f)))
-                    .collect(),
-            ),
-            Self::Break(span) => Type::Break(span),
-            Self::Continue(span) => Type::Continue(span),
-            Self::Recursive {
-                span,
-                asc,
-                label,
-                body,
-            } => Type::Recursive {
-                span,
-                asc: asc.into_iter().map(|label| map_label(label, f)).collect(),
-                label: map_label(label, f),
-                body: Box::new(body.map_names(f)),
-            },
-            Self::Iterative {
-                span,
-                asc,
-                label,
-                body,
-            } => Type::Iterative {
-                span,
-                asc: asc.into_iter().map(|label| map_label(label, f)).collect(),
-                label: map_label(label, f),
-                body: Box::new(body.map_names(f)),
-            },
-            Self::Self_(span, label) => Type::Self_(span, map_label(label, f)),
-            Self::SendType(loc, name, body) => {
-                Type::SendType(loc, f(name), Box::new(body.map_names(f)))
-            }
-            Self::ReceiveType(loc, name, body) => {
-                Type::ReceiveType(loc, f(name), Box::new(body.map_names(f)))
-            }
-        }
-    }
-}
-
-fn map_label<Name, N>(label: Option<Name>, f: &mut impl FnMut(Name) -> N) -> Option<N> {
-    label.map(f)
-}
-
-impl<Name: Clone + Eq + Hash> Type<Name> {
-    pub fn substitute(self, var: &Name, typ: &Self) -> Result<Self, TypeError<Name>> {
+impl Type {
+    pub fn substitute(self, var: &Name, typ: &Self) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
             Self::Chan(span, t) => Self::Chan(span, Box::new(t.substitute(var, typ)?)),
@@ -490,11 +409,11 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         })
     }
 
-    pub fn is_linear(&self, type_defs: &TypeDefs<Name>) -> Result<bool, TypeError<Name>> {
+    pub fn is_linear(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(!self.is_positive(type_defs)?)
     }
 
-    pub fn is_positive(&self, type_defs: &TypeDefs<Name>) -> Result<bool, TypeError<Name>> {
+    pub fn is_positive(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(match self {
             Self::Primitive(_, _) => true,
             Self::Chan(_, t) => t.is_negative(type_defs)?,
@@ -529,7 +448,7 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         })
     }
 
-    pub fn is_negative(&self, type_defs: &TypeDefs<Name>) -> Result<bool, TypeError<Name>> {
+    pub fn is_negative(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(match self {
             Self::Primitive(_, _) => true,
             Self::Chan(_, t) => t.is_positive(type_defs)?,
@@ -567,9 +486,9 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
     pub fn check_assignable(
         &self,
         span: &Span,
-        u: &Type<Name>,
-        type_defs: &TypeDefs<Name>,
-    ) -> Result<(), TypeError<Name>> {
+        u: &Type,
+        type_defs: &TypeDefs,
+    ) -> Result<(), TypeError> {
         if !self.is_assignable_to(u, type_defs, &HashSet::new())? {
             return Err(TypeError::CannotAssignFromTo(
                 span.clone(),
@@ -583,9 +502,9 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
     fn is_assignable_to(
         &self,
         other: &Self,
-        type_defs: &TypeDefs<Name>,
+        type_defs: &TypeDefs,
         ind: &HashSet<(Option<Name>, Option<Name>)>,
-    ) -> Result<bool, TypeError<Name>> {
+    ) -> Result<bool, TypeError> {
         Ok(match (self, other) {
             (Self::Chan(_, dual_t1), Self::Chan(_, dual_t2)) => {
                 dual_t2.is_assignable_to(dual_t1, type_defs, ind)?
@@ -728,7 +647,7 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         })
     }
 
-    pub fn dual(&self, type_defs: &TypeDefs<Name>) -> Result<Self, TypeError<Name>> {
+    pub fn dual(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Chan(
                 span.clone(),
@@ -916,8 +835,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         asc: &IndexSet<Option<Name>>,
         label: &Option<Name>,
         body: &Self,
-        type_defs: &TypeDefs<Name>,
-    ) -> Result<Self, TypeError<Name>> {
+        type_defs: &TypeDefs,
+    ) -> Result<Self, TypeError> {
         body.clone()
             .expand_recursive_helper(asc, label, body, type_defs)
     }
@@ -927,8 +846,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         top_asc: &IndexSet<Option<Name>>,
         top_label: &Option<Name>,
         top_body: &Self,
-        type_defs: &TypeDefs<Name>,
-    ) -> Result<Self, TypeError<Name>> {
+        type_defs: &TypeDefs,
+    ) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
 
@@ -1058,8 +977,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         asc: &IndexSet<Option<Name>>,
         label: &Option<Name>,
         body: &Self,
-        type_defs: &TypeDefs<Name>,
-    ) -> Result<Self, TypeError<Name>> {
+        type_defs: &TypeDefs,
+    ) -> Result<Self, TypeError> {
         body.clone()
             .expand_iterative_helper(asc, label, body, type_defs)
     }
@@ -1069,8 +988,8 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
         top_asc: &IndexSet<Option<Name>>,
         top_label: &Option<Name>,
         top_body: &Self,
-        type_defs: &TypeDefs<Name>,
-    ) -> Result<Self, TypeError<Name>> {
+        type_defs: &TypeDefs,
+    ) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
 
@@ -1261,31 +1180,28 @@ impl<Name: Clone + Eq + Hash> Type<Name> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Context<Name> {
-    type_defs: TypeDefs<Name>,
-    declarations: Arc<IndexMap<Name, (Span, Type<Name>)>>,
-    unchecked_definitions: Arc<IndexMap<Name, (Span, Arc<process::Expression<Name, ()>>)>>,
-    checked_definitions: Arc<RwLock<IndexMap<Name, CheckedDef<Name>>>>,
+pub struct Context {
+    type_defs: TypeDefs,
+    declarations: Arc<IndexMap<Name, (Span, Type)>>,
+    unchecked_definitions: Arc<IndexMap<Name, (Span, Arc<process::Expression<()>>)>>,
+    checked_definitions: Arc<RwLock<IndexMap<Name, CheckedDef>>>,
     current_deps: IndexSet<Name>,
-    variables: IndexMap<Name, Type<Name>>,
-    loop_points: IndexMap<Option<Name>, (Name, Arc<IndexMap<Name, Type<Name>>>)>,
+    variables: IndexMap<Name, Type>,
+    loop_points: IndexMap<Option<Name>, (Name, Arc<IndexMap<Name, Type>>)>,
 }
 
 #[derive(Clone, Debug)]
-struct CheckedDef<Name> {
+struct CheckedDef {
     span: Span,
-    def: Arc<process::Expression<Name, Type<Name>>>,
-    typ: Type<Name>,
+    def: Arc<process::Expression<Type>>,
+    typ: Type,
 }
 
-impl<Name> Context<Name>
-where
-    Name: Clone + Eq + Hash,
-{
+impl Context {
     pub fn new(
-        type_defs: TypeDefs<Name>,
-        declarations: IndexMap<Name, (Span, Type<Name>)>,
-        unchecked_definitions: IndexMap<Name, (Span, Arc<process::Expression<Name, ()>>)>,
+        type_defs: TypeDefs,
+        declarations: IndexMap<Name, (Span, Type)>,
+        unchecked_definitions: IndexMap<Name, (Span, Arc<process::Expression<()>>)>,
     ) -> Self {
         Self {
             type_defs,
@@ -1298,11 +1214,7 @@ where
         }
     }
 
-    pub fn check_definition(
-        &mut self,
-        span: &Span,
-        name: &Name,
-    ) -> Result<Type<Name>, TypeError<Name>> {
+    pub fn check_definition(&mut self, span: &Span, name: &Name) -> Result<Type, TypeError> {
         if let Some(checked) = self.checked_definitions.read().unwrap().get(name) {
             return Ok(checked.typ.clone());
         }
@@ -1344,7 +1256,7 @@ where
 
     pub fn get_checked_definitions(
         &self,
-    ) -> IndexMap<Name, (Span, Arc<process::Expression<Name, Type<Name>>>)> {
+    ) -> IndexMap<Name, (Span, Arc<process::Expression<Type>>)> {
         self.checked_definitions
             .read()
             .unwrap()
@@ -1353,11 +1265,11 @@ where
             .collect()
     }
 
-    pub fn get_declarations(&self) -> IndexMap<Name, (Span, Type<Name>)> {
+    pub fn get_declarations(&self) -> IndexMap<Name, (Span, Type)> {
         (*self.declarations).clone()
     }
 
-    pub fn get_type_defs(&self) -> &TypeDefs<Name> {
+    pub fn get_type_defs(&self) -> &TypeDefs {
         &self.type_defs
     }
 
@@ -1373,18 +1285,18 @@ where
         }
     }
 
-    pub fn get_variable(&mut self, name: &Name) -> Option<Type<Name>> {
+    pub fn get_variable(&mut self, name: &Name) -> Option<Type> {
         self.variables.shift_remove(name)
     }
 
-    pub fn get(&mut self, span: &Span, name: &Name) -> Result<Type<Name>, TypeError<Name>> {
+    pub fn get(&mut self, span: &Span, name: &Name) -> Result<Type, TypeError> {
         match self.get_variable(name) {
             Some(typ) => Ok(typ),
             None => self.check_definition(span, name),
         }
     }
 
-    pub fn put(&mut self, span: &Span, name: Name, typ: Type<Name>) -> Result<(), TypeError<Name>> {
+    pub fn put(&mut self, span: &Span, name: Name, typ: Type) -> Result<(), TypeError> {
         if let Some(typ) = self.variables.get(&name) {
             if typ.is_linear(&self.type_defs)? {
                 return Err(TypeError::ShadowedObligation(span.clone(), name));
@@ -1403,9 +1315,9 @@ where
     pub fn capture(
         &mut self,
         inference_subject: Option<&Name>,
-        cap: &process::Captures<Name>,
+        cap: &process::Captures,
         target: &mut Self,
-    ) -> Result<(), TypeError<Name>> {
+    ) -> Result<(), TypeError> {
         for (name, span) in &cap.names {
             if Some(name) == inference_subject {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
@@ -1434,8 +1346,8 @@ where
 
     pub fn check_process(
         &mut self,
-        process: &process::Process<Name, ()>,
-    ) -> Result<Arc<process::Process<Name, Type<Name>>>, TypeError<Name>> {
+        process: &process::Process<()>,
+    ) -> Result<Arc<process::Process<Type>>, TypeError> {
         match process {
             process::Process::Let {
                 span,
@@ -1500,16 +1412,16 @@ where
         inference_subject: Option<&Name>,
         span: &Span,
         object: &Name,
-        typ: &Type<Name>,
-        command: &process::Command<Name, ()>,
+        typ: &Type,
+        command: &process::Command<()>,
         analyze_process: &mut impl FnMut(
             &mut Self,
-            &process::Process<Name, ()>,
+            &process::Process<()>,
         ) -> Result<
-            (Arc<process::Process<Name, Type<Name>>>, Option<Type<Name>>),
-            TypeError<Name>,
+            (Arc<process::Process<Type>>, Option<Type>),
+            TypeError,
         >,
-    ) -> Result<(process::Command<Name, Type<Name>>, Option<Type<Name>>), TypeError<Name>> {
+    ) -> Result<(process::Command<Type>, Option<Type>), TypeError> {
         if let Type::Name(_, name, args) = typ {
             return self.check_command(
                 inference_subject,
@@ -1666,7 +1578,7 @@ where
 
                 let original_context = self.clone();
                 let mut typed_processes = Vec::new();
-                let mut inferred_type: Option<Type<Name>> = None;
+                let mut inferred_type: Option<Type> = None;
 
                 for (branch, process) in branches.iter().zip(processes.iter()) {
                     *self = original_context.clone();
@@ -1908,9 +1820,9 @@ where
 
     pub fn infer_process(
         &mut self,
-        process: &process::Process<Name, ()>,
+        process: &process::Process<()>,
         subject: &Name,
-    ) -> Result<(Arc<process::Process<Name, Type<Name>>>, Type<Name>), TypeError<Name>> {
+    ) -> Result<(Arc<process::Process<Type>>, Type), TypeError> {
         match process {
             process::Process::Let {
                 span,
@@ -2002,8 +1914,8 @@ where
         &mut self,
         span: &Span,
         subject: &Name,
-        command: &process::Command<Name, ()>,
-    ) -> Result<(process::Command<Name, Type<Name>>, Type<Name>), TypeError<Name>> {
+        command: &process::Command<()>,
+    ) -> Result<(process::Command<Type>, Type), TypeError> {
         Ok(match command {
             process::Command::Link(expression) => {
                 let (expression, typ) = self.infer_expression(Some(subject), expression)?;
@@ -2176,9 +2088,9 @@ where
     pub fn check_expression(
         &mut self,
         inference_subject: Option<&Name>,
-        expression: &process::Expression<Name, ()>,
-        target_type: &Type<Name>,
-    ) -> Result<Arc<process::Expression<Name, Type<Name>>>, TypeError<Name>> {
+        expression: &process::Expression<()>,
+        target_type: &Type,
+    ) -> Result<Arc<process::Expression<Type>>, TypeError> {
         match expression {
             process::Expression::Reference(span, name, ()) => {
                 if Some(name) == inference_subject {
@@ -2246,8 +2158,8 @@ where
     pub fn infer_expression(
         &mut self,
         inference_subject: Option<&Name>,
-        expression: &process::Expression<Name, ()>,
-    ) -> Result<(Arc<process::Expression<Name, Type<Name>>>, Type<Name>), TypeError<Name>> {
+        expression: &process::Expression<()>,
+    ) -> Result<(Arc<process::Expression<Type>>, Type), TypeError> {
         match expression {
             process::Expression::Reference(span, name, ()) => {
                 if Some(name) == inference_subject {
@@ -2316,7 +2228,7 @@ where
         }
     }
 
-    pub fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError<Name>> {
+    pub fn cannot_have_obligations(&mut self, span: &Span) -> Result<(), TypeError> {
         if self.obligations().any(|_| true) {
             return Err(TypeError::UnfulfilledObligations(
                 span.clone(),
@@ -2327,7 +2239,7 @@ where
     }
 }
 
-impl<Name: Display> Type<Name> {
+impl Type {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
@@ -2411,55 +2323,19 @@ impl<Name: Display> Type<Name> {
             Self::Break(_) => write!(f, "!"),
             Self::Continue(_) => write!(f, "?"),
 
-            Self::Recursive {
-                /*asc,*/ label,
-                body,
-                ..
-            } => {
+            Self::Recursive { label, body, .. } => {
                 write!(f, "recursive ")?;
                 if let Some(label) = label {
                     write!(f, ":{} ", label)?;
                 }
-                /*if asc.len() > 0 {
-                write!(f, "/* descends ")?;
-                for (i, label) in asc.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    match label {
-                        Some(label) => write!(f, ":{}", label)?,
-                        None => write!(f, "unlabeled")?,
-                    }
-                }
-                write!(f, " */
- ")?;
-                }*/
                 body.pretty(f, indent)
             }
 
-            Self::Iterative {
-                /*asc,*/ label,
-                body,
-                ..
-            } => {
+            Self::Iterative { label, body, .. } => {
                 write!(f, "iterative ")?;
                 if let Some(label) = label {
                     write!(f, ":{} ", label)?;
                 }
-                /*if asc.len() > 0 {
-                write!(f, "/* descends ")?;
-                for (i, label) in asc.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    match label {
-                        Some(label) => write!(f, ":{}", label)?,
-                        None => write!(f, "unlabeled")?,
-                    }
-                }
-                write!(f, " */
- ")?;
-                }*/
                 body.pretty(f, indent)
             }
 
@@ -2574,11 +2450,7 @@ impl<Name: Display> Type<Name> {
             Self::Break(_) => write!(f, "!"),
             Self::Continue(_) => write!(f, "?"),
 
-            Self::Recursive {
-                /*asc,*/ label,
-                body,
-                ..
-            } => {
+            Self::Recursive { label, body, .. } => {
                 write!(f, "recursive ")?;
                 if !matches!(body.as_ref(), Self::Either(..)) {
                     if let Some(label) = label {
@@ -2588,11 +2460,7 @@ impl<Name: Display> Type<Name> {
                 body.pretty_compact(f)
             }
 
-            Self::Iterative {
-                /*asc,*/ label,
-                body,
-                ..
-            } => {
+            Self::Iterative { label, body, .. } => {
                 write!(f, "iterative ")?;
                 if !matches!(body.as_ref(), Self::Choice(..)) {
                     if let Some(label) = label {
@@ -2661,7 +2529,7 @@ fn two_labels_from_two_spans(
     labels
 }
 
-impl<Name: Display> TypeError<Name> {
+impl TypeError {
     pub fn to_report(&self, source_code: Arc<str>) -> miette::Report {
         use crate::playground::labels_from_span;
         let code = &source_code;
@@ -2897,7 +2765,7 @@ impl<Name: Display> TypeError<Name> {
     }
 }
 
-impl<Name> TypeError<Name> {
+impl TypeError {
     pub fn spans(&self) -> (Span, Option<Span>) {
         match self {
             Self::TypeNameAlreadyDefined(span1, span2, _)
