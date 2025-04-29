@@ -47,7 +47,8 @@ pub enum Command<Typ> {
 
 #[derive(Clone, Debug)]
 pub enum Expression<Typ> {
-    Reference(Span, Name, Typ),
+    Global(Span, Name, Typ),
+    Variable(Span, Name, Typ),
     Fork {
         span: Span,
         captures: Captures,
@@ -393,8 +394,12 @@ impl<Typ: Clone> Expression<Typ> {
         loop_points: &IndexMap<Option<Name>, Captures>,
     ) -> (Arc<Self>, Captures) {
         match self {
-            Self::Reference(loc, name, typ) => (
-                Arc::new(Self::Reference(loc.clone(), name.clone(), typ.clone())),
+            Self::Global(loc, name, typ) => (
+                Arc::new(Self::Global(loc.clone(), name.clone(), typ.clone())),
+                Captures::new(),
+            ),
+            Self::Variable(loc, name, typ) => (
+                Arc::new(Self::Variable(loc.clone(), name.clone(), typ.clone())),
                 Captures::single(name.clone(), loc.clone()),
             ),
             Self::Fork {
@@ -430,8 +435,11 @@ impl<Typ: Clone> Expression<Typ> {
 
     pub fn optimize(&self) -> Arc<Self> {
         match self {
-            Self::Reference(loc, name, typ) => {
-                Arc::new(Self::Reference(loc.clone(), name.clone(), typ.clone()))
+            Self::Global(loc, name, typ) => {
+                Arc::new(Self::Global(loc.clone(), name.clone(), typ.clone()))
+            }
+            Self::Variable(loc, name, typ) => {
+                Arc::new(Self::Variable(loc.clone(), name.clone(), typ.clone()))
             }
             Self::Fork {
                 span,
@@ -460,7 +468,7 @@ impl<Typ: Clone> Expression<Typ> {
 impl<Typ: Clone> Expression<Typ> {
     pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
         match self {
-            Self::Reference(_, name, typ) => {
+            Self::Global(_, name, typ) | Self::Variable(_, name, typ) => {
                 consume(name.clone(), typ.clone());
             }
             Self::Fork {
@@ -480,7 +488,8 @@ impl<Typ: Clone> Expression<Typ> {
 impl<Typ: Clone> Expression<Typ> {
     pub fn get_type(&self) -> Typ {
         match self {
-            Self::Reference(_, _, typ) => typ.clone(),
+            Self::Global(_, _, typ) => typ.clone(),
+            Self::Variable(_, _, typ) => typ.clone(),
             Self::Fork { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
         }
@@ -624,8 +633,12 @@ impl<Typ> Process<Typ> {
 impl<Typ> Expression<Typ> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
-            Self::Reference(_, name, _) => {
-                write!(f, "{}", name)
+            Self::Global(_, name, _) => {
+                write!(f, ":{}", name)
+            }
+
+            Self::Variable(_, name, _) => {
+                write!(f, "${}", name)
             }
 
             Self::Fork {

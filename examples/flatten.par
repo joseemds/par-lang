@@ -27,6 +27,6 @@ def flatten = [type T] [tree] chan yield {
   yield.empty!
 }
 
-def main = flatten(type Bool)(
+def main = :flatten(type Bool)(
   .node(.node(.empty!, .true!, .empty!)!, .false!, .empty!)!
 )

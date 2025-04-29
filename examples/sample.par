@@ -99,7 +99,7 @@ def zip = [type T, U] [list, seq] list begin {
   } in .item((x, y)!) xs loop
 }
 
-def zipped = zip(type Color, Color)(listrgb, red_forever)
+def zipped = :zip(type Color, Color)(:listrgb, :red_forever)
 
 def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
   .close => do {

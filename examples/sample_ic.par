@@ -22,13 +22,13 @@ def empty = .empty!
 
 dec tree: Tree
 def tree =
-    let b: Tree = .item(empty)(empty)! in
-    .item(empty)(b)!
+    let b: Tree = .item(:empty)(:empty)! in
+    .item(:empty)(b)!
 
 
 dec xor: [Bool][Bool] Bool
 def xor = [a][b] a{
-	.true! => not(b),
+	.true! => :not(b),
 	.false! => b
 }
 
@@ -36,7 +36,7 @@ dec xor_tree: [Tree] Bool
 
 def xor_tree = [tree: Tree] tree begin {
 	.empty! => .true!,
-	.item(lst1)(lst2)! => xor(lst1 loop)(lst2 loop)
+	.item(lst1)(lst2)! => :xor(lst1 loop)(lst2 loop)
 }
 
 
@@ -157,7 +157,7 @@ def zip = [type T, U] [list, seq] list begin {
   } in .item((x, y)!) xs loop
 }
 
-def zipped = zip(type Color, Color)(listrgb, red_forever)
+def zipped = :zip(type Color, Color)(:listrgb, :red_forever)
 
 def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
   .close => do {
@@ -204,4 +204,4 @@ dec right_list : List<Bool>
 def left_list  = .item(.true!).item(.true!).empty!
 def right_list = .item(.true!).empty!
 
-def alternate_applied = alternate(type Bool)(type Bool)(left_list)(right_list)
+def alternate_applied = :alternate(type Bool)(type Bool)(:left_list)(:right_list)

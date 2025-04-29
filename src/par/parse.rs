@@ -990,7 +990,8 @@ fn cons_branch_recv_type(input: &mut Input) -> Result<ConstructBranch> {
 fn application(input: &mut Input) -> Result<Expression> {
     (
         alt((
-            term_name.map(|name| Expression::Reference(name.span, name)),
+            (t(TokenKind::Colon), term_name).map(|(_, name)| Expression::Global(name.span, name)),
+            term_name.map(|name| Expression::Variable(name.span, name)),
             expr_grouped,
         )),
         apply,

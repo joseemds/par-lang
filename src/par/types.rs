@@ -5,7 +5,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use super::{language::Name, process};
+use super::{
+    language::Name,
+    process::{Captures, Command, Expression, Process},
+};
 use crate::location::{Span, Spanning};
 use miette::LabeledSpan;
 
@@ -20,7 +23,8 @@ pub enum TypeError {
     TypeNameNotDefined(Span, Name),
     DependencyCycle(Span, Vec<Name>),
     WrongNumberOfTypeArgs(Span, Name, usize, usize),
-    NameNotDefined(Span, Name),
+    GlobalNameNotDefined(Span, Name),
+    VariableDoesNotExist(Span, Name),
     ShadowedObligation(Span, Name),
     TypeMustBeKnownAtThisPoint(Span, Name),
     ParameterTypeMustBeKnown(Span, Name, Name),
@@ -1183,7 +1187,7 @@ impl Type {
 pub struct Context {
     type_defs: TypeDefs,
     declarations: Arc<IndexMap<Name, (Span, Type)>>,
-    unchecked_definitions: Arc<IndexMap<Name, (Span, Arc<process::Expression<()>>)>>,
+    unchecked_definitions: Arc<IndexMap<Name, (Span, Arc<Expression<()>>)>>,
     checked_definitions: Arc<RwLock<IndexMap<Name, CheckedDef>>>,
     current_deps: IndexSet<Name>,
     variables: IndexMap<Name, Type>,
@@ -1193,7 +1197,7 @@ pub struct Context {
 #[derive(Clone, Debug)]
 struct CheckedDef {
     span: Span,
-    def: Arc<process::Expression<Type>>,
+    def: Arc<Expression<Type>>,
     typ: Type,
 }
 
@@ -1201,7 +1205,7 @@ impl Context {
     pub fn new(
         type_defs: TypeDefs,
         declarations: IndexMap<Name, (Span, Type)>,
-        unchecked_definitions: IndexMap<Name, (Span, Arc<process::Expression<()>>)>,
+        unchecked_definitions: IndexMap<Name, (Span, Arc<Expression<()>>)>,
     ) -> Self {
         Self {
             type_defs,
@@ -1220,7 +1224,7 @@ impl Context {
         }
 
         let Some((span_def, unchecked_def)) = self.unchecked_definitions.get(name).cloned() else {
-            return Err(TypeError::NameNotDefined(span.clone(), name.clone()));
+            return Err(TypeError::GlobalNameNotDefined(span.clone(), name.clone()));
         };
 
         if !self.current_deps.insert(name.clone()) {
@@ -1254,9 +1258,7 @@ impl Context {
         Ok(checked_type)
     }
 
-    pub fn get_checked_definitions(
-        &self,
-    ) -> IndexMap<Name, (Span, Arc<process::Expression<Type>>)> {
+    pub fn get_checked_definitions(&self) -> IndexMap<Name, (Span, Arc<Expression<Type>>)> {
         self.checked_definitions
             .read()
             .unwrap()
@@ -1285,14 +1287,18 @@ impl Context {
         }
     }
 
+    pub fn get_global(&mut self, span: &Span, name: &Name) -> Result<Type, TypeError> {
+        self.check_definition(span, name)
+    }
+
     pub fn get_variable(&mut self, name: &Name) -> Option<Type> {
         self.variables.shift_remove(name)
     }
 
-    pub fn get(&mut self, span: &Span, name: &Name) -> Result<Type, TypeError> {
+    pub fn get_variable_or_error(&mut self, span: &Span, name: &Name) -> Result<Type, TypeError> {
         match self.get_variable(name) {
             Some(typ) => Ok(typ),
-            None => self.check_definition(span, name),
+            None => Err(TypeError::VariableDoesNotExist(span.clone(), name.clone())),
         }
     }
 
@@ -1315,7 +1321,7 @@ impl Context {
     pub fn capture(
         &mut self,
         inference_subject: Option<&Name>,
-        cap: &process::Captures,
+        cap: &Captures,
         target: &mut Self,
     ) -> Result<(), TypeError> {
         for (name, span) in &cap.names {
@@ -1346,10 +1352,10 @@ impl Context {
 
     pub fn check_process(
         &mut self,
-        process: &process::Process<()>,
-    ) -> Result<Arc<process::Process<Type>>, TypeError> {
+        process: &Process<()>,
+    ) -> Result<Arc<Process<Type>>, TypeError> {
         match process {
-            process::Process::Let {
+            Process::Let {
                 span,
                 name,
                 annotation,
@@ -1366,7 +1372,7 @@ impl Context {
                 };
                 self.put(span, name.clone(), typ.clone())?;
                 let process = self.check_process(process)?;
-                Ok(Arc::new(process::Process::Let {
+                Ok(Arc::new(Process::Let {
                     span: span.clone(),
                     name: name.clone(),
                     annotation: annotation.clone(),
@@ -1376,13 +1382,13 @@ impl Context {
                 }))
             }
 
-            process::Process::Do {
+            Process::Do {
                 span,
                 name: object,
                 typ: (),
                 command,
             } => {
-                let typ = self.get(span, object)?;
+                let typ = self.get_variable_or_error(span, object)?;
 
                 let (command, _) = self.check_command(
                     None,
@@ -1393,7 +1399,7 @@ impl Context {
                     &mut |context, process| Ok((context.check_process(process)?, None)),
                 )?;
 
-                Ok(Arc::new(process::Process::Do {
+                Ok(Arc::new(Process::Do {
                     span: span.clone(),
                     name: object.clone(),
                     typ: typ,
@@ -1401,7 +1407,7 @@ impl Context {
                 }))
             }
 
-            process::Process::Telltypes(span, _) => {
+            Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
         }
@@ -1413,15 +1419,13 @@ impl Context {
         span: &Span,
         object: &Name,
         typ: &Type,
-        command: &process::Command<()>,
+        command: &Command<()>,
         analyze_process: &mut impl FnMut(
             &mut Self,
-            &process::Process<()>,
-        ) -> Result<
-            (Arc<process::Process<Type>>, Option<Type>),
-            TypeError,
-        >,
-    ) -> Result<(process::Command<Type>, Option<Type>), TypeError> {
+            &Process<()>,
+        )
+            -> Result<(Arc<Process<Type>>, Option<Type>), TypeError>,
+    ) -> Result<(Command<Type>, Option<Type>), TypeError> {
         if let Type::Name(_, name, args) = typ {
             return self.check_command(
                 inference_subject,
@@ -1432,7 +1436,7 @@ impl Context {
                 analyze_process,
             );
         }
-        if !matches!(command, process::Command::Link(_)) {
+        if !matches!(command, Command::Link(_)) {
             if let Type::Iterative {
                 asc: top_asc,
                 label: top_label,
@@ -1450,10 +1454,7 @@ impl Context {
                 );
             }
         }
-        if !matches!(
-            command,
-            process::Command::Begin { .. } | process::Command::Loop(_, _)
-        ) {
+        if !matches!(command, Command::Begin { .. } | Command::Loop(_, _)) {
             if let Type::Recursive {
                 asc: top_asc,
                 label: top_label,
@@ -1488,14 +1489,14 @@ impl Context {
         }
 
         Ok(match command {
-            process::Command::Link(expression) => {
+            Command::Link(expression) => {
                 let expression =
                     self.check_expression(None, expression, &typ.dual(&self.type_defs)?)?;
                 self.cannot_have_obligations(span)?;
-                (process::Command::Link(expression), None)
+                (Command::Link(expression), None)
             }
 
-            process::Command::Send(argument, process) => {
+            Command::Send(argument, process) => {
                 let Type::Receive(_, argument_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1506,10 +1507,10 @@ impl Context {
                 let argument = self.check_expression(None, argument, &argument_type)?;
                 self.put(span, object.clone(), *then_type.clone())?;
                 let (process, inferred_types) = analyze_process(self, process)?;
-                (process::Command::Send(argument, process), inferred_types)
+                (Command::Send(argument, process), inferred_types)
             }
 
-            process::Command::Receive(parameter, annotation, (), process) => {
+            Command::Receive(parameter, annotation, (), process) => {
                 let Type::Send(_, parameter_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1524,7 +1525,7 @@ impl Context {
                 self.put(span, object.clone(), *then_type.clone())?;
                 let (process, inferred_types) = analyze_process(self, process)?;
                 (
-                    process::Command::Receive(
+                    Command::Receive(
                         parameter.clone(),
                         annotation.clone(),
                         *parameter_type.clone(),
@@ -1534,7 +1535,7 @@ impl Context {
                 )
             }
 
-            process::Command::Choose(chosen, process) => {
+            Command::Choose(chosen, process) => {
                 let Type::Choice(_, branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1551,13 +1552,10 @@ impl Context {
                 };
                 self.put(span, object.clone(), branch_type.clone())?;
                 let (process, inferred_types) = analyze_process(self, process)?;
-                (
-                    process::Command::Choose(chosen.clone(), process),
-                    inferred_types,
-                )
+                (Command::Choose(chosen.clone(), process), inferred_types)
             }
 
-            process::Command::Match(branches, processes) => {
+            Command::Match(branches, processes) => {
                 let Type::Either(_, required_branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1611,12 +1609,12 @@ impl Context {
                 }
 
                 (
-                    process::Command::Match(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Match(Arc::clone(branches), Box::from(typed_processes)),
                     inferred_type,
                 )
             }
 
-            process::Command::Break => {
+            Command::Break => {
                 let Type::Continue(_) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1625,10 +1623,10 @@ impl Context {
                     ));
                 };
                 self.cannot_have_obligations(span)?;
-                (process::Command::Break, None)
+                (Command::Break, None)
             }
 
-            process::Command::Continue(process) => {
+            Command::Continue(process) => {
                 let Type::Break(_) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1637,10 +1635,10 @@ impl Context {
                     ));
                 };
                 let (process, inferred_types) = analyze_process(self, process)?;
-                (process::Command::Continue(process), inferred_types)
+                (Command::Continue(process), inferred_types)
             }
 
-            process::Command::Begin {
+            Command::Begin {
                 unfounded,
                 label,
                 captures,
@@ -1707,7 +1705,7 @@ impl Context {
                 });
 
                 (
-                    process::Command::Begin {
+                    Command::Begin {
                         unfounded: *unfounded,
                         label: label.clone(),
                         captures: captures.clone(),
@@ -1717,7 +1715,7 @@ impl Context {
                 )
             }
 
-            process::Command::Loop(label, captures) => {
+            Command::Loop(label, captures) => {
                 if !matches!(typ, Type::Recursive { .. }) {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1774,12 +1772,12 @@ impl Context {
                 self.cannot_have_obligations(span)?;
 
                 (
-                    process::Command::Loop(label.clone(), captures.clone()),
+                    Command::Loop(label.clone(), captures.clone()),
                     inferred_loop.or(Some(Type::Self_(span.clone(), label.clone()))),
                 )
             }
 
-            process::Command::SendType(argument, process) => {
+            Command::SendType(argument, process) => {
                 let Type::ReceiveType(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1790,13 +1788,10 @@ impl Context {
                 let then_type = then_type.clone().substitute(type_name, argument)?;
                 self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;
-                (
-                    process::Command::SendType(argument.clone(), process),
-                    inferred_types,
-                )
+                (Command::SendType(argument.clone(), process), inferred_types)
             }
 
-            process::Command::ReceiveType(parameter, process) => {
+            Command::ReceiveType(parameter, process) => {
                 let Type::SendType(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1811,7 +1806,7 @@ impl Context {
                 self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;
                 (
-                    process::Command::ReceiveType(parameter.clone(), process),
+                    Command::ReceiveType(parameter.clone(), process),
                     inferred_types,
                 )
             }
@@ -1820,11 +1815,11 @@ impl Context {
 
     pub fn infer_process(
         &mut self,
-        process: &process::Process<()>,
+        process: &Process<()>,
         subject: &Name,
-    ) -> Result<(Arc<process::Process<Type>>, Type), TypeError> {
+    ) -> Result<(Arc<Process<Type>>, Type), TypeError> {
         match process {
-            process::Process::Let {
+            Process::Let {
                 span,
                 name,
                 annotation,
@@ -1842,7 +1837,7 @@ impl Context {
                 self.put(span, name.clone(), typ.clone())?;
                 let (process, subject_type) = self.infer_process(process, subject)?;
                 Ok((
-                    Arc::new(process::Process::Let {
+                    Arc::new(Process::Let {
                         span: span.clone(),
                         name: name.clone(),
                         annotation: annotation.clone(),
@@ -1854,7 +1849,7 @@ impl Context {
                 ))
             }
 
-            process::Process::Do {
+            Process::Do {
                 span,
                 name: object,
                 typ: (),
@@ -1863,7 +1858,7 @@ impl Context {
                 if object == subject {
                     let (command, typ) = self.infer_command(span, subject, command)?;
                     return Ok((
-                        Arc::new(process::Process::Do {
+                        Arc::new(Process::Do {
                             span: span.clone(),
                             name: object.clone(),
                             typ: typ.clone(),
@@ -1872,7 +1867,7 @@ impl Context {
                         typ,
                     ));
                 }
-                let typ = self.get(span, object)?;
+                let typ = self.get_variable_or_error(span, object)?;
 
                 let (command, inferred_type) = self.check_command(
                     Some(subject),
@@ -1894,7 +1889,7 @@ impl Context {
                 };
 
                 Ok((
-                    Arc::new(process::Process::Do {
+                    Arc::new(Process::Do {
                         span: span.clone(),
                         name: object.clone(),
                         typ,
@@ -1904,7 +1899,7 @@ impl Context {
                 ))
             }
 
-            process::Process::Telltypes(span, _) => {
+            Process::Telltypes(span, _) => {
                 Err(TypeError::Telltypes(span.clone(), self.variables.clone()))
             }
         }
@@ -1914,27 +1909,24 @@ impl Context {
         &mut self,
         span: &Span,
         subject: &Name,
-        command: &process::Command<()>,
-    ) -> Result<(process::Command<Type>, Type), TypeError> {
+        command: &Command<()>,
+    ) -> Result<(Command<Type>, Type), TypeError> {
         Ok(match command {
-            process::Command::Link(expression) => {
+            Command::Link(expression) => {
                 let (expression, typ) = self.infer_expression(Some(subject), expression)?;
-                (
-                    process::Command::Link(expression),
-                    typ.dual(&self.type_defs)?,
-                )
+                (Command::Link(expression), typ.dual(&self.type_defs)?)
             }
 
-            process::Command::Send(argument, process) => {
+            Command::Send(argument, process) => {
                 let (argument, arg_type) = self.infer_expression(Some(subject), argument)?;
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
-                    process::Command::Send(argument, process),
+                    Command::Send(argument, process),
                     Type::Receive(span.clone(), Box::new(arg_type), Box::new(then_type)),
                 )
             }
 
-            process::Command::Receive(parameter, annotation, (), process) => {
+            Command::Receive(parameter, annotation, (), process) => {
                 let Some(param_type) = annotation else {
                     return Err(TypeError::ParameterTypeMustBeKnown(
                         span.clone(),
@@ -1945,7 +1937,7 @@ impl Context {
                 self.put(span, parameter.clone(), param_type.clone())?;
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
-                    process::Command::Receive(
+                    Command::Receive(
                         parameter.clone(),
                         annotation.clone(),
                         param_type.clone(),
@@ -1959,14 +1951,14 @@ impl Context {
                 )
             }
 
-            process::Command::Choose(_, _) => {
+            Command::Choose(_, _) => {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     subject.clone(),
                 ))
             }
 
-            process::Command::Match(branches, processes) => {
+            Command::Match(branches, processes) => {
                 let original_context = self.clone();
                 let mut typed_processes = Vec::new();
                 let mut branch_types = IndexMap::new();
@@ -1979,25 +1971,22 @@ impl Context {
                 }
 
                 (
-                    process::Command::Match(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Match(Arc::clone(branches), Box::from(typed_processes)),
                     Type::Either(span.clone(), branch_types),
                 )
             }
 
-            process::Command::Break => {
+            Command::Break => {
                 self.cannot_have_obligations(span)?;
-                (process::Command::Break, Type::Continue(span.clone()))
+                (Command::Break, Type::Continue(span.clone()))
             }
 
-            process::Command::Continue(process) => {
+            Command::Continue(process) => {
                 let process = self.check_process(process)?;
-                (
-                    process::Command::Continue(process),
-                    Type::Break(span.clone()),
-                )
+                (Command::Continue(process), Type::Break(span.clone()))
             }
 
-            process::Command::Begin {
+            Command::Begin {
                 unfounded,
                 label,
                 captures,
@@ -2009,7 +1998,7 @@ impl Context {
                 );
                 let (process, body) = self.infer_process(process, subject)?;
                 (
-                    process::Command::Begin {
+                    Command::Begin {
                         unfounded: *unfounded,
                         label: label.clone(),
                         captures: captures.clone(),
@@ -2028,7 +2017,7 @@ impl Context {
                 )
             }
 
-            process::Command::Loop(label, captures) => {
+            Command::Loop(label, captures) => {
                 let Some((driver, variables)) = self.loop_points.get(label).cloned() else {
                     return Err(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
                 };
@@ -2062,23 +2051,23 @@ impl Context {
                 self.cannot_have_obligations(span)?;
 
                 (
-                    process::Command::Loop(label.clone(), captures.clone()),
+                    Command::Loop(label.clone(), captures.clone()),
                     Type::Self_(span.clone(), label.clone()),
                 )
             }
 
-            process::Command::SendType(_, _) => {
+            Command::SendType(_, _) => {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     subject.clone(),
                 ))
             }
 
-            process::Command::ReceiveType(parameter, process) => {
+            Command::ReceiveType(parameter, process) => {
                 self.type_defs.vars.insert(parameter.clone());
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
-                    process::Command::ReceiveType(parameter.clone(), process),
+                    Command::ReceiveType(parameter.clone(), process),
                     Type::SendType(span.clone(), parameter.clone(), Box::new(then_type)),
                 )
             }
@@ -2088,11 +2077,21 @@ impl Context {
     pub fn check_expression(
         &mut self,
         inference_subject: Option<&Name>,
-        expression: &process::Expression<()>,
+        expression: &Expression<()>,
         target_type: &Type,
-    ) -> Result<Arc<process::Expression<Type>>, TypeError> {
+    ) -> Result<Arc<Expression<Type>>, TypeError> {
         match expression {
-            process::Expression::Reference(span, name, ()) => {
+            Expression::Global(span, name, ()) => {
+                let typ = self.get_global(span, name)?;
+                typ.check_assignable(span, target_type, &self.type_defs)?;
+                Ok(Arc::new(Expression::Global(
+                    span.clone(),
+                    name.clone(),
+                    typ.clone(),
+                )))
+            }
+
+            Expression::Variable(span, name, ()) => {
                 if Some(name) == inference_subject {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
@@ -2100,19 +2099,19 @@ impl Context {
                     ));
                 }
 
-                let typ = self.get(span, name)?;
+                let typ = self.get_variable_or_error(span, name)?;
                 typ.check_assignable(span, target_type, &self.type_defs)?;
                 if !typ.is_linear(&self.type_defs)? {
                     self.put(span, name.clone(), typ.clone())?;
                 }
-                Ok(Arc::new(process::Expression::Reference(
+                Ok(Arc::new(Expression::Variable(
                     span.clone(),
                     name.clone(),
                     typ.clone(),
                 )))
             }
 
-            process::Expression::Fork {
+            Expression::Fork {
                 span,
                 captures,
                 chan_name: channel,
@@ -2132,7 +2131,7 @@ impl Context {
                 self.capture(inference_subject, captures, &mut context)?;
                 context.put(span, channel.clone(), chan_type.clone())?;
                 let process = context.check_process(process)?;
-                Ok(Arc::new(process::Expression::Fork {
+                Ok(Arc::new(Expression::Fork {
                     span: span.clone(),
                     captures: captures.clone(),
                     chan_name: channel.clone(),
@@ -2143,10 +2142,10 @@ impl Context {
                 }))
             }
 
-            process::Expression::Primitive(span, value, ()) => {
+            Expression::Primitive(span, value, ()) => {
                 let typ = value.get_type();
                 typ.check_assignable(span, target_type, &self.type_defs)?;
-                Ok(Arc::new(process::Expression::Primitive(
+                Ok(Arc::new(Expression::Primitive(
                     span.clone(),
                     value.clone(),
                     typ,
@@ -2158,22 +2157,30 @@ impl Context {
     pub fn infer_expression(
         &mut self,
         inference_subject: Option<&Name>,
-        expression: &process::Expression<()>,
-    ) -> Result<(Arc<process::Expression<Type>>, Type), TypeError> {
+        expression: &Expression<()>,
+    ) -> Result<(Arc<Expression<Type>>, Type), TypeError> {
         match expression {
-            process::Expression::Reference(span, name, ()) => {
+            Expression::Global(span, name, ()) => {
+                let typ = self.get_global(span, name)?;
+                Ok((
+                    Arc::new(Expression::Global(span.clone(), name.clone(), typ.clone())),
+                    typ.clone(),
+                ))
+            }
+
+            Expression::Variable(span, name, ()) => {
                 if Some(name) == inference_subject {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
                         name.clone(),
                     ));
                 }
-                let typ = self.get(span, name)?;
+                let typ = self.get_variable_or_error(span, name)?;
                 if !typ.is_linear(&self.type_defs)? {
                     self.put(span, name.clone(), typ.clone())?;
                 }
                 Ok((
-                    Arc::new(process::Expression::Reference(
+                    Arc::new(Expression::Variable(
                         span.clone(),
                         name.clone(),
                         typ.clone(),
@@ -2182,7 +2189,7 @@ impl Context {
                 ))
             }
 
-            process::Expression::Fork {
+            Expression::Fork {
                 span,
                 captures,
                 chan_name: channel,
@@ -2201,7 +2208,7 @@ impl Context {
                 };
                 let dual = typ.dual(&self.type_defs)?;
                 Ok((
-                    Arc::new(process::Expression::Fork {
+                    Arc::new(Expression::Fork {
                         span: span.clone(),
                         captures: captures.clone(),
                         chan_name: channel.clone(),
@@ -2214,10 +2221,10 @@ impl Context {
                 ))
             }
 
-            process::Expression::Primitive(span, value, ()) => {
+            Expression::Primitive(span, value, ()) => {
                 let typ = value.get_type();
                 Ok((
-                    Arc::new(process::Expression::Primitive(
+                    Arc::new(Expression::Primitive(
                         span.clone(),
                         value.clone(),
                         typ.clone(),
@@ -2608,9 +2615,13 @@ impl TypeError {
                     provided_number
                 )
             }
-            Self::NameNotDefined(span, name) => {
+            Self::GlobalNameNotDefined(span, name) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "`{}` is not defined.", name)
+            }
+            Self::VariableDoesNotExist(span, name) => {
+                let labels = labels_from_span(code, span);
+                miette::miette!(labels = labels, "`Variable {}` does not exist.", name)
             }
             Self::ShadowedObligation(span, name) => {
                 let labels = labels_from_span(code, span);
@@ -2778,7 +2789,8 @@ impl TypeError {
             | Self::TypeNameNotDefined(span, _)
             | Self::DependencyCycle(span, _)
             | Self::WrongNumberOfTypeArgs(span, _, _, _)
-            | Self::NameNotDefined(span, _)
+            | Self::GlobalNameNotDefined(span, _)
+            | Self::VariableDoesNotExist(span, _)
             | Self::ShadowedObligation(span, _)
             | Self::TypeMustBeKnownAtThisPoint(span, _)
             | Self::ParameterTypeMustBeKnown(span, _, _)

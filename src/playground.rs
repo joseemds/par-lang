@@ -475,7 +475,7 @@ impl Error {
             Self::Type(error) => format!("{:?}", error.to_report(code)),
 
             Self::InetCompile(err) => {
-                format!("inet compilation error: {}", err.display(&code))
+                format!("inet compilation error: {:?}", err)
             }
         }
     }

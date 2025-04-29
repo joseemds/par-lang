@@ -29,8 +29,8 @@ def is_even = begin {
   .drop => !
   .apply(n) => (n begin {
     .zero!  => .true!
-    .add1 n => not(n loop)
+    .add1 n => :not(n loop)
   }) loop
 }
 
-def filter_even = filter(is_even)
+def filter_even = :filter(:is_even)

@@ -56,7 +56,8 @@ pub enum Pattern {
 #[derive(Clone, Debug)]
 pub enum Expression {
     Primitive(Span, Primitive),
-    Reference(Span, Name),
+    Global(Span, Name),
+    Variable(Span, Name),
     Grouped(Span, Box<Self>),
     Let {
         span: Span,
@@ -298,7 +299,7 @@ impl Pattern {
                 name: name.clone(),
                 annotation: annotation.clone(),
                 typ: (),
-                value: Arc::new(process::Expression::Reference(
+                value: Arc::new(process::Expression::Variable(
                     span.clone(),
                     Name::match_(level),
                     (),
@@ -373,7 +374,11 @@ impl Expression {
                 (),
             )),
 
-            Self::Reference(span, name) => Arc::new(process::Expression::Reference(
+            Self::Global(span, name) => {
+                Arc::new(process::Expression::Global(span.clone(), name.clone(), ()))
+            }
+
+            Self::Variable(span, name) => Arc::new(process::Expression::Variable(
                 span.clone(),
                 name.clone(),
                 (),
@@ -490,7 +495,8 @@ impl Spanning for Expression {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
-            | Self::Reference(span, _)
+            | Self::Global(span, _)
+            | Self::Variable(span, _)
             | Self::Grouped(span, _)
             | Self::Let { span, .. }
             | Self::Do { span, .. }
@@ -684,7 +690,7 @@ impl Apply {
                     span: span.clone(),
                     name: Name::result(),
                     typ: (),
-                    command: process::Command::Link(Arc::new(process::Expression::Reference(
+                    command: process::Command::Link(Arc::new(process::Expression::Variable(
                         span.clone(),
                         Name::object(),
                         (),
@@ -795,7 +801,7 @@ impl ApplyBranch {
                     name: name.clone(),
                     annotation: None,
                     typ: (),
-                    value: Arc::new(process::Expression::Reference(
+                    value: Arc::new(process::Expression::Variable(
                         span.clone(),
                         Name::object(),
                         (),

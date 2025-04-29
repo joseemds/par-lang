@@ -29,16 +29,12 @@ enum VariableKind {
     Linear,
     // Replicable, but needs no dereliction
     Replicable,
-    // Replicable, and needs dereliction
-    Boxed,
-    // Global, should not be stored in the context.
-    Global,
 }
 
 #[derive(Clone, Debug)]
 pub enum Error {
     /// Error that is emitted when a variable that was never bound/captured is used
-    UnboundVar(Span),
+    UnboundVar(Span, Var),
     /// Error that is emitted when a linear variable is not used
     UnusedVar(Span),
     UnexpectedType(Span, Type),
@@ -75,7 +71,7 @@ impl Error {
 
     pub fn spans(&self) -> (Span, Vec<Span>) {
         match self {
-            Error::UnboundVar(span)
+            Error::UnboundVar(span, _)
             | Error::UnusedVar(span)
             | Error::UnexpectedType(span, _)
             | Error::UnguardedLoop(span, _) => (span.clone(), vec![]),
@@ -201,7 +197,6 @@ impl Context {
     }
 
     fn bind_variable_with_kind(&mut self, var: Var, tree: TypedTree, kind: VariableKind) {
-        assert_ne!(kind, VariableKind::Global);
         match self.vars.insert(var.clone(), (tree, kind)) {
             Some(x) => panic!("{:?}", x),
             None => (),
@@ -265,10 +260,6 @@ impl Compiler {
             Some(def) => def.expression,
             _ => return Err(Error::GlobalNotFound(name.clone())),
         };
-        /*let debug = false;
-        if debug {
-            println!("{global:#?}");
-        }*/
 
         let (id, typ) = self.in_package(|this, _| {
             let mut s = String::new();
@@ -354,9 +345,6 @@ impl Compiler {
         self.net.ports.push_back(tree.tree);
 
         self.net.packages = Arc::new(self.id_to_package.clone().into_iter().enumerate().collect());
-        /*if debug {
-            println!("{}", self.net.show());
-        }*/
         self.net.assert_valid_with(
             self.lazy_redexes
                 .iter()
@@ -368,9 +356,6 @@ impl Compiler {
             .redexes
             .append(&mut core::mem::take(&mut self.lazy_redexes).into());
         self.net.assert_valid();
-        /*if debug {
-            println!("{}", self.net.show());
-        }*/
         *self.id_to_ty.get_mut(id).unwrap() = tree.ty.clone();
         *self.id_to_package.get_mut(id).unwrap() = core::mem::take(&mut self.net);
         self.net = old_net;
@@ -385,10 +370,8 @@ impl Compiler {
     ) -> Result<T> {
         let mut vars = IndexMap::new();
         for (name, _) in captures.names.iter() {
-            let (tree, kind) = self.use_name(name, false)?;
-            if kind != VariableKind::Global {
-                vars.insert(Var::Name(name.clone()), (tree, kind));
-            }
+            let (tree, kind) = self.use_variable(name, false)?;
+            vars.insert(Var::Name(name.clone()), (tree, kind));
         }
         for (label, _) in self.context.loop_points.clone().iter() {
             let (tree, kind) = self.use_var(&Var::Loop(label.0.clone()), false)?;
@@ -415,14 +398,6 @@ impl Compiler {
             }
             None => Ok(()),
         }
-    }
-
-    fn instantiate_name(&mut self, name: &Name, in_command: bool) -> Result<TypedTree> {
-        let (value, kind) = self.use_name(name, in_command)?;
-        if kind == VariableKind::Boxed {
-            todo!()
-        }
-        Ok(value)
     }
 
     fn use_var(&mut self, var: &Var, in_command: bool) -> Result<(TypedTree, VariableKind)> {
@@ -456,19 +431,20 @@ impl Compiler {
                 }
             }
         } else {
-            Err(Error::UnboundVar(Default::default()))
+            Err(Error::UnboundVar(Default::default(), var.clone()))
         }
     }
 
-    fn use_name(&mut self, name: &Name, in_command: bool) -> Result<(TypedTree, VariableKind)> {
-        if self.context.vars.contains_key(&Var::Name(name.clone())) {
-            return self.use_var(&Var::Name(name.clone()), in_command);
-        }
+    fn use_global(&mut self, name: &Name) -> Result<TypedTree> {
         match self.compile_global(name) {
-            Ok(value) => Ok((value, VariableKind::Global)),
-            Err(Error::GlobalNotFound(_)) => Err(Error::UnboundVar(Default::default())),
+            Ok(value) => Ok(value),
+            Err(Error::GlobalNotFound(_)) => Err(Error::GlobalNotFound(name.clone())),
             Err(e) => Err(e),
         }
+    }
+
+    fn use_variable(&mut self, name: &Name, in_command: bool) -> Result<(TypedTree, VariableKind)> {
+        return self.use_var(&Var::Name(name.clone()), in_command);
     }
 
     fn create_typed_wire(&mut self, t: Type) -> (TypedTree, TypedTree) {
@@ -484,29 +460,6 @@ impl Compiler {
             },
         )
     }
-
-    /*fn show_state(&mut self) {
-        println!("Variables:");
-        for (name, (value, _)) in &self.context.vars {
-            println!(
-                "    {}: {} = {:?}",
-                if let Var::Name(name) = name {
-                    format!("{}", name)
-                } else {
-                    format!("{:?}", name)
-                },
-                {
-                    let mut s = String::new();
-                    value.ty.pretty(&mut s, 4);
-                    s
-                },
-                self.net.show_tree(&value.tree)
-            )
-        }
-        println!("Net:");
-        println!("{}", self.net.show_indent(1));
-        println!("{}", self.net.ports.len())
-    }*/
 
     fn link_typed(&mut self, a: TypedTree, b: TypedTree) {
         self.net.link(a.tree, b.tree);
@@ -569,7 +522,8 @@ impl Compiler {
 
     fn compile_expression(&mut self, expr: &Expression<Type>) -> Result<TypedTree> {
         match expr {
-            Expression::Reference(_, name, _) => self.instantiate_name(name, false),
+            Expression::Global(_, name, _) => self.use_global(name),
+            Expression::Variable(_, name, _) => Ok(self.use_variable(name, false)?.0),
 
             Expression::Fork {
                 captures,
@@ -601,13 +555,6 @@ impl Compiler {
     }
 
     fn compile_process(&mut self, proc: &Process<Type>) -> Result<()> {
-        /*let debug = false;
-        if debug {
-            let mut s = String::new();
-            proc.pretty(&mut s, 0).unwrap();
-            println!("{s}");
-            self.show_state();
-        }*/
         match proc {
             Process::Let {
                 name, value, then, ..
@@ -635,17 +582,16 @@ impl Compiler {
         ty: Type,
         cmd: &Command<Type>,
     ) -> Result<()> {
-        //println!("{:?}", loc);
         match cmd {
             Command::Link(expr) => {
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let value = self.compile_expression(expr)?;
                 self.link_typed(subject, value);
                 self.end_context()?;
             }
             // types get erased.
             Command::SendType(argument, process) => {
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let Type::ReceiveType(_, type_name, ret_type) =
                     self.normalize_type(subject.ty.clone())
                 else {
@@ -656,7 +602,7 @@ impl Compiler {
                 self.compile_process(process)?;
             }
             Command::ReceiveType(parameter, process) => {
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let Type::SendType(_, type_name, ret_type) =
                     self.normalize_type(subject.ty.clone())
                 else {
@@ -679,7 +625,7 @@ impl Compiler {
                 // name = free
                 // free = (name < expr >)
                 // < process >
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let Type::Receive(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };
@@ -695,7 +641,7 @@ impl Compiler {
                 // name = free
                 // free = (name target)
                 // < process >
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let Type::Send(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
@@ -708,7 +654,7 @@ impl Compiler {
                 self.compile_process(process)?;
             }
             Command::Choose(chosen, process) => {
-                let subject = self.instantiate_name(&name, true)?;
+                let subject = self.use_variable(&name, true)?.0;
                 let Type::Choice(_, branches) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Choose: {:?}", subject.ty);
                 };
@@ -724,7 +670,7 @@ impl Compiler {
             }
             Command::Match(names, processes) => {
                 self.context.unguarded_loop_labels.clear();
-                let old_tree = self.instantiate_name(&name, true)?;
+                let old_tree = self.use_variable(&name, true)?.0;
                 // Multiplex all other variables in the context.
                 let (context_in, pack_data) = self.context.pack(None, None, &mut self.net);
 
@@ -754,7 +700,7 @@ impl Compiler {
                 // < name ! >
                 // ==
                 // name = *
-                let a = self.instantiate_name(&name, true)?.tree;
+                let a = self.use_variable(&name, true)?.0.tree;
                 self.net.link(a, Tree::e());
                 self.end_context()?;
             }
@@ -763,7 +709,7 @@ impl Compiler {
                 // ==
                 // name = *
                 // < process >
-                let a = self.instantiate_name(&name, true)?.tree;
+                let a = self.use_variable(&name, true)?.0.tree;
                 self.net.link(a, Tree::e());
                 self.compile_process(process)?;
             }

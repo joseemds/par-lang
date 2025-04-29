@@ -49,7 +49,7 @@ def start_game = [p1, p2] begin :game {
     .add1 limit => do {
       p1.play_move[move1]
       p2.play_move[move2]
-    } in calculate_round(move1, move2) {
+    } in :calculate_round(move1, move2) {
       .first! => do {
         p1.win
         p2.lose
