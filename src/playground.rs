@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
@@ -35,6 +35,43 @@ pub struct Playground {
     show_ic: bool,
     readback_state: Option<crate::readback::ReadbackState>,
     cursor_pos: (usize, usize),
+    theme_mode: ThemeMode,
+    last_is_dark: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    pub fn is_dark(&self, system_dark: bool) -> bool {
+        match self {
+            Self::System => system_dark,
+            Self::Dark => true,
+            Self::Light => false,
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::System, Self::Light, Self::Dark]
+    }
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        Self::System
+    }
 }
 
 #[derive(Clone)]
@@ -138,6 +175,20 @@ pub(crate) enum Error {
 
 impl Playground {
     pub fn new(cc: &eframe::CreationContext<'_>, file_path: Option<PathBuf>) -> Box<Self> {
+        let system_dark = cc
+            .egui_ctx
+            .input(|ri| ri.raw.system_theme.map(|t| t == Theme::Dark))
+            .unwrap_or(false);
+        let initial_is_dark = ThemeMode::default().is_dark(system_dark);
+
+        // set visuals on first run
+        cc.egui_ctx.set_visuals(if initial_is_dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
+
+        // cc.egui_ctx.set_visuals(egui::Visuals::light());
         cc.egui_ctx.all_styles_mut(|style| {
             style.text_styles.extend([
                 (egui::TextStyle::Monospace, egui::FontId::monospace(16.0)),
@@ -158,6 +209,8 @@ impl Playground {
             show_ic: false,
             readback_state: Default::default(),
             cursor_pos: (0, 0),
+            theme_mode: ThemeMode::System,
+            last_is_dark: initial_is_dark,
         });
 
         if let Some(path) = file_path {
@@ -170,6 +223,27 @@ impl Playground {
 
 impl eframe::App for Playground {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Set overall UI style based on theme mode
+        let system_dark = ctx
+            .input(|ri| ri.raw.system_theme.map(|t| t == egui::Theme::Dark))
+            .unwrap_or(false);
+        let is_dark = self.theme_mode.is_dark(system_dark);
+
+        // Always apply theme settings
+        let mut visuals = if is_dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
+
+        visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.code_bg_color = egui::Color32::TRANSPARENT;
+
+        ctx.set_visuals(visuals);
+        self.last_is_dark = is_dark;
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
                 .resizable(true)
@@ -214,6 +288,25 @@ impl eframe::App for Playground {
                                     {
                                         self.save_file_as();
                                         ui.close_menu();
+                                    }
+                                },
+                            );
+
+                            ui.add_space(5.0);
+
+                            // create dropdown menu for theme mode selection
+                            egui::menu::menu_custom_button(
+                                ui,
+                                egui::Button::new(egui::RichText::new("Theme").strong()),
+                                |ui| {
+                                    for &mode in ThemeMode::all() {
+                                        if ui
+                                            .radio(self.theme_mode == mode, mode.display_name())
+                                            .clicked()
+                                        {
+                                            self.theme_mode = mode;
+                                            ui.close_menu();
+                                        }
                                     }
                                 },
                             );
@@ -293,7 +386,9 @@ impl Playground {
     }
 
     fn get_theme(&self, ui: &egui::Ui) -> ColorTheme {
-        if ui.visuals().dark_mode {
+        let is_dark = self.theme_mode.is_dark(ui.visuals().dark_mode);
+
+        if is_dark {
             fix_dark_theme(ColorTheme::GRUVBOX_DARK)
         } else {
             fix_light_theme(ColorTheme::GITHUB_LIGHT)
