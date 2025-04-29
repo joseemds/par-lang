@@ -162,9 +162,9 @@ impl<Name: Clone + Spanning> TypeOnHover<Name> {
 
 impl<Name: Clone> TypeOnHover<Name> {
     pub fn query(&self, row: usize, column: usize) -> Option<NameWithType<Name>> {
-        // if self.sorted_pairs.is_empty() {
-        //     return None;
-        // }
+        if self.sorted_pairs.is_empty() {
+            return None;
+        }
         // find index with the greatest start that is <= than (row, column)
         let (mut lo, mut hi) = (0, self.sorted_pairs.len());
         while lo + 1 < hi {
