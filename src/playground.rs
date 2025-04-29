@@ -203,7 +203,8 @@ pub(crate) enum Error {
 
 impl Playground {
     pub fn new(cc: &eframe::CreationContext<'_>, file_path: Option<PathBuf>) -> Box<Self> {
-        let system_dark = cc.egui_ctx
+        let system_dark = cc
+            .egui_ctx
             .input(|ri| ri.raw.system_theme.map(|t| t == Theme::Dark))
             .unwrap_or(false);
         let initial_is_dark = ThemeMode::default().is_dark(system_dark);
@@ -256,22 +257,20 @@ impl eframe::App for Playground {
             .unwrap_or(false);
         let is_dark = self.theme_mode.is_dark(system_dark);
 
-        // reapply transparent backgrounds for widget background and code editor background.
-        if is_dark != self.last_is_dark {
-            let mut visuals = if is_dark {
-                egui::Visuals::dark()
-            } else {
-                egui::Visuals::light()
-            };
+        // Always apply theme settings
+        let mut visuals = if is_dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
 
-            visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-            visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-            visuals.widgets.active .bg_fill = egui::Color32::TRANSPARENT;
-            visuals.code_bg_color = egui::Color32::TRANSPARENT;
+        visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+        visuals.code_bg_color = egui::Color32::TRANSPARENT;
 
-            ctx.set_visuals(visuals);
-            self.last_is_dark = is_dark;
-        }
+        ctx.set_visuals(visuals);
+        self.last_is_dark = is_dark;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
@@ -329,7 +328,10 @@ impl eframe::App for Playground {
                                 egui::Button::new(egui::RichText::new("Theme").strong()),
                                 |ui| {
                                     for &mode in ThemeMode::all() {
-                                        if ui.radio(self.theme_mode == mode, mode.display_name()).clicked() {
+                                        if ui
+                                            .radio(self.theme_mode == mode, mode.display_name())
+                                            .clicked()
+                                        {
                                             self.theme_mode = mode;
                                             ui.close_menu();
                                         }
