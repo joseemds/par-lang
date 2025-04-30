@@ -472,12 +472,8 @@ impl Compiler {
         Tree::c(w0, multiplex_trees(trees))
     }
 
-    /// cases is a list of (context, payload).
-    fn choice_instance(&mut self, ctx_out: Tree, cases: Vec<(Tree, Tree)>) -> Tree {
-        Tree::c(
-            ctx_out,
-            multiplex_trees(cases.into_iter().map(|(a, b)| Tree::c(a, b)).collect()),
-        )
+    fn choice_instance(&mut self, ctx_out: Tree, cases: Vec<Tree>) -> Tree {
+        Tree::c(ctx_out, multiplex_trees(cases))
     }
 
     fn normalize_type(&mut self, ty: Type) -> Type {
@@ -685,12 +681,17 @@ impl Compiler {
                     .into_iter()
                     .zip(required_branches.values())
                 {
-                    let (w0, w1) = self.create_typed_wire(branch.clone());
-                    self.bind_variable(name.clone(), w0)?;
+                    let (id, _) =
+                        self.in_package(|this, _| {
+                            let (w0, w1) = this.create_typed_wire(branch.clone());
+                            this.bind_variable(name.clone(), w0)?;
 
-                    let context_out = self.context.unpack(&pack_data, &mut self.net);
-                    self.compile_process(process)?;
-                    branches.push((context_out, w1.tree))
+                            let context_out = this.context.unpack(&pack_data, &mut this.net);
+                            this.compile_process(process)?;
+                            Ok(Tree::c(context_out, w1.tree)
+                                .with_type(Type::Break(Default::default())))
+                        })?;
+                    branches.push(Tree::Package(id))
                 }
                 let t = self.choice_instance(context_in, branches);
 
