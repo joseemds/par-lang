@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures::channel::oneshot;
 use indexmap::IndexMap;
 
 use super::PrimitiveComb;
@@ -95,75 +96,6 @@ impl Tree {
                 b.map_vars(m);
             }
             Era | Package(_) | Ext(_, _) | Primitive(_) => {}
-        }
-    }
-
-    fn map_vars_tree(&mut self, m: &mut impl FnMut(VarId) -> Tree) {
-        use Tree::*;
-        match self {
-            t @ Var(..) => {
-                let Var(id) = &t else { unreachable!() };
-                *t = m(id.clone())
-            }
-            Con(a, b) => {
-                a.map_vars_tree(m);
-                b.map_vars_tree(m);
-            }
-            Dup(a, b) => {
-                a.map_vars_tree(m);
-                b.map_vars_tree(m);
-            }
-            Signal(_, _, payload) => {
-                payload.map_vars_tree(m);
-            }
-            Choice(context, _) => {
-                context.map_vars_tree(m);
-            }
-            Era | Package(_) | Ext(_, _) | Primitive(_) => {}
-        }
-    }
-
-    pub fn show(&self) -> String {
-        self.show_with_context(&mut (BTreeMap::new(), 0))
-    }
-
-    pub fn show_with_context(&self, ctx: &mut (BTreeMap<usize, String>, usize)) -> String {
-        match self {
-            Self::Var(id) => {
-                if let Some(name) = ctx.0.get(id) {
-                    name.clone()
-                } else {
-                    ctx.1 += 1;
-                    let free_var = ctx.1 - 1;
-                    ctx.0.insert(*id, number_to_string(free_var));
-                    number_to_string(free_var)
-                }
-            }
-            Self::Era => format!("*"),
-            Self::Con(a, b) => format!(
-                "({} {})",
-                a.show_with_context(ctx),
-                b.show_with_context(ctx)
-            ),
-            Self::Dup(a, b) => format!(
-                "[{} {}]",
-                a.show_with_context(ctx),
-                b.show_with_context(ctx)
-            ),
-            Self::Signal(index, size, payload) => format!(
-                "signal({} {} {})",
-                index,
-                size,
-                payload.show_with_context(ctx),
-            ),
-            Self::Choice(context, branches) => {
-                format!("choice({} {:?})", context.show_with_context(ctx), branches,)
-            }
-            Self::Package(id) => format!("@{}", id),
-            Self::Ext(_, _) => format!("<ext>"),
-
-            Self::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
-            Self::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
         }
     }
 }
@@ -288,16 +220,6 @@ impl Variables {
 
     pub fn get_mut(&mut self, id: VarId) -> Option<&mut VarState> {
         self.vars.get_mut(id)
-    }
-
-    pub fn remove(&mut self, id: VarId) -> VarState {
-        match self.vars.get_mut(id) {
-            Some(state) => {
-                self.free.push(id);
-                std::mem::replace(state, VarState::Free)
-            }
-            None => VarState::Free,
-        }
     }
 
     pub fn remove_linked(&mut self, id: VarId) -> Result<Tree, &mut VarState> {
@@ -473,29 +395,6 @@ impl Net {
         }
     }
 
-    pub fn substitute_ref(&self, tree: &Tree) -> Tree {
-        match tree {
-            Tree::Con(a, b) => Tree::c(self.substitute_ref(a), self.substitute_ref(b)),
-            Tree::Dup(a, b) => Tree::d(self.substitute_ref(a), self.substitute_ref(b)),
-            Tree::Signal(index, size, payload) => {
-                Tree::Signal(*index, *size, Box::new(self.substitute_ref(payload)))
-            }
-            Tree::Choice(context, branches) => {
-                Tree::Choice(Box::new(self.substitute_ref(context)), Arc::clone(branches))
-            }
-            Tree::Var(id) => {
-                if let Some(VarState::Linked(a)) = self.variables.get(*id) {
-                    self.substitute_ref(&a)
-                } else {
-                    tree.clone()
-                }
-            }
-            tree @ (Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_)) => {
-                tree.clone()
-            }
-        }
-    }
-
     pub fn normal(&mut self) {
         while self.reduce_one() {}
         // dereference all variables
@@ -544,12 +443,28 @@ impl Net {
         }
     }
 
-    pub fn map_vars_tree(&mut self, m: &mut impl FnMut(VarId) -> Tree) {
-        self.ports.iter_mut().for_each(|x| x.map_vars_tree(m));
-        self.redexes.iter_mut().for_each(|(a, b)| {
-            a.map_vars_tree(m);
-            b.map_vars_tree(m)
-        });
+    pub fn show(&self) -> String {
+        self.show_indent(0)
+    }
+
+    pub fn show_indent(&self, indent: usize) -> String {
+        use core::fmt::Write;
+        let indent_string = "    ".repeat(indent);
+        let mut s = String::new();
+        for i in &self.ports {
+            write!(&mut s, "{}{}\n", indent_string, self.show_tree(i)).unwrap();
+        }
+        for (a, b) in &self.redexes {
+            write!(
+                &mut s,
+                "{}{} ~ {}\n",
+                indent_string,
+                self.show_tree(a),
+                self.show_tree(b)
+            )
+            .unwrap();
+        }
+        s
     }
 
     pub fn show_tree(&self, t: &Tree) -> String {
@@ -575,38 +490,6 @@ impl Net {
 
             Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
             Tree::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
-        }
-    }
-
-    pub fn show(&self) -> String {
-        self.show_indent(0)
-    }
-
-    pub fn show_indent(&self, indent: usize) -> String {
-        use core::fmt::Write;
-        let indent_string = "    ".repeat(indent);
-        let mut s = String::new();
-        for i in &self.ports {
-            write!(&mut s, "{}{}\n", indent_string, self.show_tree(i)).unwrap();
-        }
-        for (a, b) in &self.redexes {
-            write!(
-                &mut s,
-                "{}{} ~ {}\n",
-                indent_string,
-                self.show_tree(a),
-                self.show_tree(b)
-            )
-            .unwrap();
-        }
-        s
-    }
-
-    pub fn is_active(&self, tree: &Tree) -> bool {
-        if let Tree::Var(_) = self.substitute_ref(tree) {
-            false
-        } else {
-            true
         }
     }
 
