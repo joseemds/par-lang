@@ -217,6 +217,7 @@ impl SharedState {
         match tree {
             Tree::Con(a, b) => (*a, *b),
             other => {
+                println!("ETA {:?}", other);
                 // eta expand
                 let ((v0, v1), (w0, w1)) = {
                     let mut net = self.shared.net.lock().unwrap();

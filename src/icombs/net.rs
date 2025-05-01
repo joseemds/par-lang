@@ -28,9 +28,11 @@ pub fn number_to_string(mut number: usize) -> String {
 /// The `Tree` enum itself contains the whole tree, although it some parts of it might be inside
 /// half-linked `Tree::Var`s
 pub enum Tree {
+    Era,
     Con(Box<Tree>, Box<Tree>),
     Dup(Box<Tree>, Box<Tree>),
-    Era,
+    Signal(u16, u16, Box<Tree>),
+    Choice(Box<Tree>, Arc<[usize]>),
     Var(usize),
     Package(usize),
     Ext(
@@ -82,11 +84,17 @@ impl Tree {
                 a.map_vars(m);
                 b.map_vars(m);
             }
+            Signal(_, _, payload) => {
+                payload.map_vars(m);
+            }
+            Choice(context, _) => {
+                context.map_vars(m);
+            }
             Dup(a, b) => {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            _ => {}
+            Era | Package(_) | Ext(_, _) | Primitive(_) => {}
         }
     }
 
@@ -105,7 +113,13 @@ impl Tree {
                 a.map_vars_tree(m);
                 b.map_vars_tree(m);
             }
-            _ => {}
+            Signal(_, _, payload) => {
+                payload.map_vars_tree(m);
+            }
+            Choice(context, _) => {
+                context.map_vars_tree(m);
+            }
+            Era | Package(_) | Ext(_, _) | Primitive(_) => {}
         }
     }
 
@@ -125,6 +139,7 @@ impl Tree {
                     number_to_string(free_var)
                 }
             }
+            Self::Era => format!("*"),
             Self::Con(a, b) => format!(
                 "({} {})",
                 a.show_with_context(ctx),
@@ -135,7 +150,15 @@ impl Tree {
                 a.show_with_context(ctx),
                 b.show_with_context(ctx)
             ),
-            Self::Era => format!("*"),
+            Self::Signal(index, size, payload) => format!(
+                "signal({} {} {})",
+                index,
+                size,
+                payload.show_with_context(ctx),
+            ),
+            Self::Choice(context, branches) => {
+                format!("choice({} {:?})", context.show_with_context(ctx), branches,)
+            }
             Self::Package(id) => format!("@{}", id),
             Self::Ext(_, _) => format!("<ext>"),
 
@@ -148,9 +171,20 @@ impl Tree {
 impl core::fmt::Debug for Tree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Era => f.debug_tuple("Era").finish(),
             Self::Con(a, b) => f.debug_tuple("Con").field(a).field(b).finish(),
             Self::Dup(a, b) => f.debug_tuple("Dup").field(a).field(b).finish(),
-            Self::Era => f.debug_tuple("Era").finish(),
+            Self::Signal(index, size, payload) => f
+                .debug_tuple("Signal")
+                .field(index)
+                .field(size)
+                .field(payload)
+                .finish(),
+            Self::Choice(context, branches) => f
+                .debug_tuple("Choice")
+                .field(context)
+                .field(branches)
+                .finish(),
             Self::Var(id) => f.debug_tuple("Var").field(id).finish(),
             Self::Package(id) => f.debug_tuple("Package").field(id).finish(),
             Self::Ext(_, _) => f.debug_tuple("Ext").finish_non_exhaustive(),
@@ -162,9 +196,11 @@ impl core::fmt::Debug for Tree {
 impl Clone for Tree {
     fn clone(&self) -> Self {
         match self {
+            Self::Era => Self::Era,
             Self::Con(a, b) => Self::Con(a.clone(), b.clone()),
             Self::Dup(a, b) => Self::Dup(a.clone(), b.clone()),
-            Self::Era => Self::Era,
+            Self::Signal(index, size, payload) => Self::Signal(*index, *size, payload.clone()),
+            Self::Choice(context, branches) => Self::Choice(context.clone(), Arc::clone(branches)),
             Self::Var(id) => Self::Var(id.clone()),
             Self::Package(id) => Self::Package(id.clone()),
             Self::Ext(_, _) => panic!("Can't clone `Ext` tree!"),
@@ -177,6 +213,7 @@ impl Clone for Tree {
 pub struct Rewrites {
     pub commute: u128,
     pub annihilate: u128,
+    pub signal: u128,
     pub era: u128,
     pub ext: u128,
     pub expand: u128,
@@ -191,6 +228,7 @@ impl core::ops::Add<Rewrites> for Rewrites {
         Self {
             commute: self.commute + rhs.commute,
             annihilate: self.annihilate + rhs.annihilate,
+            signal: self.signal + rhs.signal,
             era: self.era + rhs.era,
             expand: self.expand + rhs.expand,
             ext: self.ext + rhs.ext,
@@ -295,11 +333,6 @@ impl Variables {
 impl Net {
     fn interact(&mut self, a: Tree, b: Tree) {
         use Tree::*;
-        /*println!(
-            "Interacting {} and {}",
-            self.show_tree(&a),
-            self.show_tree(&b)
-        );*/
         match (a, b) {
             (a @ Var(..), b @ _) | (a @ _, b @ Var(..)) => {
                 // link anyway
@@ -329,6 +362,28 @@ impl Net {
                 self.link(*b1, Tree::Con(Box::new(b01), Box::new(b11)));
                 self.rewrites.commute += 1;
             }
+            (Signal(index, size, payload), Choice(context, branches))
+            | (Choice(context, branches), Signal(index, size, payload)) => {
+                assert_eq!(branches.len(), size as usize);
+                self.link(
+                    Tree::Con(context, payload),
+                    Tree::Package(branches[index as usize]),
+                );
+                self.rewrites.signal += 1;
+            }
+            (Signal(_, _, payload), Era) | (Era, Signal(_, _, payload)) => {
+                self.link(*payload, Era);
+                self.rewrites.era += 1;
+            }
+            (Signal(index, size, payload), Dup(b0, b1))
+            | (Dup(b0, b1), Signal(index, size, payload)) => {
+                let (a00, b00) = self.create_wire();
+                let (a10, b10) = self.create_wire();
+                self.link(*payload, Tree::Dup(Box::new(b00), Box::new(b10)));
+                self.link(*b0, Tree::Signal(index, size, Box::new(a00)));
+                self.link(*b1, Tree::Signal(index, size, Box::new(a10)));
+                self.rewrites.commute += 1;
+            }
             (Ext(f, a), b) | (b, Ext(f, a)) => {
                 f(self, Ok(b), a);
                 self.rewrites.ext += 1;
@@ -350,6 +405,7 @@ impl Net {
             (Primitive(p), a) | (a, Primitive(p)) => {
                 p.interact(self, a);
             }
+            (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
     }
 
@@ -405,13 +461,15 @@ impl Net {
                 self.substitute_tree(a);
                 self.substitute_tree(b);
             }
+            Tree::Signal(_, _, payload) => self.substitute_tree(payload),
+            Tree::Choice(context, _) => self.substitute_tree(context),
             Tree::Var(id) => {
                 if let Ok(mut a) = self.variables.remove_linked(*id) {
                     self.substitute_tree(&mut a);
                     *tree = a;
                 }
             }
-            _ => {}
+            Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_) => {}
         }
     }
 
@@ -419,6 +477,12 @@ impl Net {
         match tree {
             Tree::Con(a, b) => Tree::c(self.substitute_ref(a), self.substitute_ref(b)),
             Tree::Dup(a, b) => Tree::d(self.substitute_ref(a), self.substitute_ref(b)),
+            Tree::Signal(index, size, payload) => {
+                Tree::Signal(*index, *size, Box::new(self.substitute_ref(payload)))
+            }
+            Tree::Choice(context, branches) => {
+                Tree::Choice(Box::new(self.substitute_ref(context)), Arc::clone(branches))
+            }
             Tree::Var(id) => {
                 if let Some(VarState::Linked(a)) = self.variables.get(*id) {
                     self.substitute_ref(&a)
@@ -426,7 +490,9 @@ impl Net {
                     tree.clone()
                 }
             }
-            _ => tree.clone(),
+            tree @ (Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_)) => {
+                tree.clone()
+            }
         }
     }
 
@@ -495,9 +561,15 @@ impl Net {
                     number_to_string(*id)
                 }
             }
+            Tree::Era => format!("*"),
             Tree::Con(a, b) => format!("({} {})", self.show_tree(a), self.show_tree(b)),
             Tree::Dup(a, b) => format!("[{} {}]", self.show_tree(a), self.show_tree(b)),
-            Tree::Era => format!("*"),
+            Tree::Signal(index, size, payload) => {
+                format!("signal({} {} {})", index, size, self.show_tree(payload),)
+            }
+            Tree::Choice(context, branches) => {
+                format!("choice({} {:?})", self.show_tree(context), branches,)
+            }
             Tree::Package(id) => format!("@{}", id),
             Tree::Ext(..) => format!("<ext>"),
 
@@ -552,6 +624,12 @@ impl Net {
                 self.assert_tree_not_contains(a, idx);
                 self.assert_tree_not_contains(b, idx);
             }
+            Tree::Signal(_, _, payload) => {
+                self.assert_tree_not_contains(payload, idx);
+            }
+            Tree::Choice(context, _) => {
+                self.assert_tree_not_contains(context, idx);
+            }
             Tree::Var(id) => {
                 if id == idx {
                     panic!("Vicious circle detected");
@@ -560,7 +638,7 @@ impl Net {
                     self.assert_tree_not_contains(tree, idx);
                 }
             }
-            _ => {}
+            Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_) => {}
         }
     }
 
@@ -609,6 +687,8 @@ impl Net {
                 a.append(&mut b);
                 a
             }
+            Tree::Signal(_, _, payload) => self.assert_tree_valid(payload),
+            Tree::Choice(context, _) => self.assert_tree_valid(context),
             Tree::Era => {
                 vec![]
             }

@@ -312,7 +312,6 @@ impl Compiler {
     fn in_package(
         &mut self,
         f: impl FnOnce(&mut Self, usize) -> Result<TypedTree>,
-        //debug: bool,
     ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
@@ -466,14 +465,11 @@ impl Compiler {
     }
 
     fn either_instance(&mut self, tree: Tree, index: usize, out_of: usize) -> Tree {
-        let (w0, w1) = self.net.create_wire();
-        let mut trees: Vec<_> = std::iter::repeat(Tree::e()).take(out_of).collect();
-        *trees.get_mut(index).unwrap() = Tree::c(w1, tree);
-        Tree::c(w0, multiplex_trees(trees))
+        Tree::Signal(index as u16, out_of as u16, Box::new(tree))
     }
 
-    fn choice_instance(&mut self, ctx_out: Tree, cases: Vec<Tree>) -> Tree {
-        Tree::c(ctx_out, multiplex_trees(cases))
+    fn choice_instance(&mut self, ctx_out: Tree, branches: Vec<usize>) -> Tree {
+        Tree::Choice(Box::new(ctx_out), Arc::from(branches))
     }
 
     fn normalize_type(&mut self, ty: Type) -> Type {
@@ -681,7 +677,7 @@ impl Compiler {
                     .into_iter()
                     .zip(required_branches.values())
                 {
-                    let (id, _) =
+                    let (package_id, _) =
                         self.in_package(|this, _| {
                             let (w0, w1) = this.create_typed_wire(branch.clone());
                             this.bind_variable(name.clone(), w0)?;
@@ -691,7 +687,7 @@ impl Compiler {
                             Ok(Tree::c(context_out, w1.tree)
                                 .with_type(Type::Break(Default::default())))
                         })?;
-                    branches.push(Tree::Package(id))
+                    branches.push(package_id)
                 }
                 let t = self.choice_instance(context_in, branches);
 
