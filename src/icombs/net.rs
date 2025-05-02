@@ -2,10 +2,12 @@
 //! It is not performant; it's mainly here to act as a storage and interchange format
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures::channel::oneshot;
+use futures::channel::{mpsc, oneshot};
+use futures::task::{Spawn, SpawnExt};
+use futures::StreamExt;
 use indexmap::IndexMap;
 
 use super::PrimitiveComb;
@@ -160,7 +162,7 @@ impl core::ops::Add<Rewrites> for Rewrites {
 
 impl Rewrites {
     pub fn total(&self) -> u128 {
-        self.commute + self.annihilate + self.era + self.resp
+        self.commute + self.annihilate + self.signal + self.expand + self.era + self.resp
     }
 
     pub fn total_per_second(&self) -> u128 {
@@ -172,7 +174,7 @@ impl Rewrites {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 /// A Net represents the current state of the runtime
 /// It contains a list of active pairs, as well as a list of free ports.
 /// It also stores a map of variables, which records whether variables were linked by either of their sides
@@ -182,6 +184,12 @@ pub struct Net {
     pub variables: Variables,
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
+    reducer: Option<Reducer>,
+}
+
+#[derive(Clone)]
+struct Reducer {
+    notify: mpsc::UnboundedSender<()>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -193,17 +201,12 @@ pub struct Variables {
 #[derive(Debug, Clone)]
 pub enum VarState {
     Free,
-    Pending,
     Linked(Tree),
 }
 
 impl Variables {
     pub fn get(&self, id: VarId) -> Option<&VarState> {
         self.vars.get(id)
-    }
-
-    pub fn get_mut(&mut self, id: VarId) -> Option<&mut VarState> {
-        self.vars.get_mut(id)
     }
 
     pub fn remove_linked(&mut self, id: VarId) -> Result<Tree, &mut VarState> {
@@ -237,6 +240,44 @@ impl Variables {
 }
 
 impl Net {
+    pub fn start_reducer(mut self, spawner: impl Spawn + Send + Sync) -> Arc<Mutex<Self>> {
+        if self.reducer.is_some() {
+            panic!("reducer already started");
+        }
+
+        let (notify, resume) = mpsc::unbounded();
+        self.reducer = Some(Reducer { notify });
+
+        let net = Arc::new(Mutex::new(self));
+        {
+            let net = Arc::clone(&net);
+            let mut resume = Box::pin(resume);
+            spawner
+                .spawn(async move {
+                    loop {
+                        {
+                            let mut lock = net.lock().expect("lock failed");
+                            while lock.reduce_one() {}
+                        }
+                        match resume.next().await {
+                            Some(()) => continue,
+                            None => break,
+                        }
+                    }
+                })
+                .expect("spawn failed");
+        }
+
+        net
+    }
+
+    pub fn notify_reducer(&self) {
+        let Some(reducer) = &self.reducer else {
+            panic!("reducer not started");
+        };
+        reducer.notify.unbounded_send(()).expect("notify failed");
+    }
+
     fn interact(&mut self, a: Tree, b: Tree) {
         use Tree::*;
         match (a, b) {
@@ -290,7 +331,9 @@ impl Net {
                 self.link(*b1, Tree::Signal(index, size, Box::new(a10)));
                 self.rewrites.commute += 1;
             }
-            (Package(_), Era) | (Era, Package(_)) => {}
+            (Package(_), Era) | (Era, Package(_)) => {
+                self.rewrites.era += 1;
+            }
             (Package(id), Dup(a, b)) | (Dup(a, b), Package(id)) => {
                 self.link(*a, Package(id));
                 self.link(*b, Package(id));
@@ -310,6 +353,7 @@ impl Net {
             (SignalRequest(tx), Signal(index, size, payload))
             | (Signal(index, size, payload), SignalRequest(tx)) => {
                 tx.send((index, size, payload)).expect("receiver dropped");
+                self.rewrites.resp += 1;
             }
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }

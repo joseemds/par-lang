@@ -11,12 +11,16 @@ impl PrimitiveComb {
         match (self, tree) {
             (Self::Int(i), Tree::IntRequest(c)) => {
                 c.send(i).expect("receiver dropped");
+                net.rewrites.resp += 1;
             }
 
-            (Self::Int(_), Tree::Era) => {}
+            (Self::Int(_), Tree::Era) => {
+                net.rewrites.era += 1;
+            }
             (Self::Int(i), Tree::Dup(a, b)) => {
                 net.link(Tree::Primitive(Self::Int(i)), *a);
                 net.link(Tree::Primitive(Self::Int(i)), *b);
+                net.rewrites.commute += 1;
             }
 
             (Self::IntAdd1, Tree::Con(arg, res)) => match arg.as_ref() {

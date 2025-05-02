@@ -407,14 +407,15 @@ impl Playground {
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
+                let net = net.start_reducer(TokioSpawn);
 
                 let ctx = ui.ctx().clone();
-                *element = Some(Element::initialize(
+                *element = Some(Element::new(
                     Arc::new(move || {
                         ctx.request_repaint();
                     }),
                     Arc::new(TokioSpawn),
-                    Handle::new(program.type_defs.clone(), Arc::new(Mutex::new(net)), tree),
+                    Handle::new(program.type_defs.clone(), net, tree),
                 ));
             }
         }

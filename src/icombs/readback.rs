@@ -96,6 +96,7 @@ impl Handle {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
             locked.link(Tree::IntRequest(tx), self.tree.tree);
+            locked.notify_reducer();
             rx
         };
 
@@ -113,7 +114,7 @@ impl Handle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree.tree);
-        drop(locked);
+        locked.notify_reducer();
     }
 
     pub fn send(mut self) -> (Self, Self) {
@@ -126,6 +127,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(Tree::c(u1, t1), self.tree.tree);
+        locked.notify_reducer();
         drop(locked);
 
         let t_handle = Self {
@@ -152,6 +154,7 @@ impl Handle {
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
         locked.link(Tree::c(u1, t1), self.tree.tree);
+        locked.notify_reducer();
         drop(locked);
 
         let t_handle = Self {
@@ -184,6 +187,7 @@ impl Handle {
         let mut locked = self.net.lock().expect("lock failed");
         let (a0, a1) = locked.create_wire();
         locked.link(Tree::Signal(index, size, Box::new(a1)), self.tree.tree);
+        locked.notify_reducer();
         drop(locked);
 
         Self {
@@ -203,6 +207,7 @@ impl Handle {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
             locked.link(Tree::SignalRequest(tx), self.tree.tree);
+            locked.notify_reducer();
             rx
         };
 
@@ -227,7 +232,7 @@ impl Handle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Era, self.tree.tree);
-        drop(locked);
+        locked.notify_reducer();
     }
 
     pub fn continue_(mut self) {
@@ -238,7 +243,7 @@ impl Handle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Era, self.tree.tree);
-        drop(locked);
+        locked.notify_reducer();
     }
 }
 

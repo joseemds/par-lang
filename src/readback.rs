@@ -7,12 +7,8 @@ use eframe::egui::{self, RichText, Ui};
 use futures::{
     channel::oneshot,
     task::{Spawn, SpawnExt},
-    FutureExt,
 };
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::sync::{Arc, Mutex};
 
 enum Request {
     Int(Box<dyn Send + FnOnce(i128)>),
@@ -58,16 +54,6 @@ pub struct Element {
 }
 
 impl Element {
-    pub fn initialize(
-        refresh: Arc<dyn Fn() + Send + Sync>,
-        spawner: Arc<dyn Spawn + Send + Sync>,
-        handle: Handle,
-    ) -> Arc<Mutex<Self>> {
-        let net = handle.net();
-        drop(thread::spawn(move || reducer(net)));
-        Self::new(refresh, spawner, handle)
-    }
-
     pub fn new(
         refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
@@ -111,6 +97,7 @@ impl Element {
             };
             row(ui, "Annihilate:", rewrites.annihilate);
             row(ui, "Commute:", rewrites.commute);
+            row(ui, "Signal", rewrites.signal);
             row(ui, "Erase:", rewrites.era);
             row(ui, "Expand:", rewrites.expand);
             row(ui, "Responds:", rewrites.resp);
@@ -298,12 +285,5 @@ async fn handle_coroutine(
                 break;
             }
         }
-    }
-}
-
-fn reducer(net: Arc<Mutex<Net>>) {
-    loop {
-        let mut lock = net.lock().expect("lock failed");
-        while lock.reduce_one() {}
     }
 }

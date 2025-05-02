@@ -204,7 +204,6 @@ impl Context {
     }
 }
 
-#[derive(Debug)]
 pub struct Compiler {
     net: Net,
     context: Context,
