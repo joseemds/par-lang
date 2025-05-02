@@ -482,14 +482,8 @@ impl Compiler {
                     self.normalize_type(ty)
                 }
             }
-            Type::Either(loc, mut index_map) => {
-                index_map.sort_keys();
-                Type::Either(loc, index_map)
-            }
-            Type::Choice(loc, mut index_map) => {
-                index_map.sort_keys();
-                Type::Choice(loc, index_map)
-            }
+            Type::Either(loc, branch_map) => Type::Either(loc, branch_map),
+            Type::Choice(loc, branch_map) => Type::Choice(loc, branch_map),
             Type::Recursive {
                 asc, label, body, ..
             } => self.normalize_type(
@@ -645,7 +639,7 @@ impl Compiler {
                 self.net.link(Tree::c(w1.tree, v1.tree), subject.tree);
                 self.compile_process(process)?;
             }
-            Command::Choose(chosen, process) => {
+            Command::Signal(chosen, process) => {
                 let subject = self.use_variable(&name, true)?.0;
                 let Type::Choice(_, branches) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Choose: {:?}", subject.ty);
@@ -653,14 +647,14 @@ impl Compiler {
                 let Some(branch_type) = branches.get(chosen) else {
                     unreachable!()
                 };
-                let branch_index = branches.get_index_of(chosen).unwrap();
+                let branch_index = branches.keys().position(|k| k == chosen).unwrap();
                 let (v0, v1) = self.create_typed_wire(branch_type.clone());
                 let choosing_tree = self.either_instance(v1.tree, branch_index, branches.len());
                 self.net.link(choosing_tree, subject.tree);
                 self.bind_variable(name, v0)?;
                 self.compile_process(process)?;
             }
-            Command::Match(names, processes) => {
+            Command::Case(names, processes) => {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, true)?.0;
                 // Multiplex all other variables in the context.

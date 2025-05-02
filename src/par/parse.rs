@@ -13,8 +13,8 @@ use crate::par::{
     types::Type,
 };
 use core::fmt::Display;
-use indexmap::IndexMap;
 use miette::{SourceOffset, SourceSpan};
+use std::collections::BTreeMap;
 use winnow::token::literal;
 use winnow::{
     combinator::{alt, cut_err, opt, preceded, repeat, separated, terminated, trace},
@@ -401,7 +401,7 @@ fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>
 
 fn branches_body<'i, P, O>(
     branch: P,
-) -> impl Parser<Input<'i>, (Span, IndexMap<Name, O>), Error> + use<'i, P, O>
+) -> impl Parser<Input<'i>, (Span, BTreeMap<Name, O>), Error> + use<'i, P, O>
 where
     P: Parser<Input<'i>, O, Error>,
 {
@@ -418,7 +418,7 @@ where
                 ),
             )
             .fold(
-                || IndexMap::new(),
+                || BTreeMap::new(),
                 |mut branches, (_, name, branch, _)| {
                     branches.insert(name, branch);
                     branches

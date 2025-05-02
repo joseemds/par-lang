@@ -30,8 +30,8 @@ pub enum Command<Typ> {
     Link(Arc<Expression<Typ>>),
     Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
     Receive(Name, Option<Type>, Typ, Arc<Process<Typ>>),
-    Choose(Name, Arc<Process<Typ>>),
-    Match(Arc<[Name]>, Box<[Arc<Process<Typ>>]>),
+    Signal(Name, Arc<Process<Typ>>),
+    Case(Arc<[Name]>, Box<[Arc<Process<Typ>>]>),
     Break,
     Continue(Arc<Process<Typ>>),
     Begin {
@@ -204,12 +204,12 @@ impl<Typ: Clone> Process<Typ> {
                         typ.clone(),
                         process.optimize(),
                     ),
-                    Command::Choose(chosen, process) => {
-                        Command::Choose(chosen.clone(), process.optimize())
+                    Command::Signal(chosen, process) => {
+                        Command::Signal(chosen.clone(), process.optimize())
                     }
-                    Command::Match(branches, processes) => {
+                    Command::Case(branches, processes) => {
                         let processes = processes.iter().map(|p| p.optimize()).collect();
-                        Command::Match(Arc::clone(branches), processes)
+                        Command::Case(Arc::clone(branches), processes)
                     }
                     Command::Break => Command::Break,
                     Command::Continue(process) => Command::Continue(process.optimize()),
@@ -290,11 +290,11 @@ impl<Typ: Clone> Command<Typ> {
                     caps,
                 )
             }
-            Self::Choose(chosen, process) => {
+            Self::Signal(chosen, process) => {
                 let (process, caps) = process.fix_captures(loop_points);
-                (Self::Choose(chosen.clone(), process), caps)
+                (Self::Signal(chosen.clone(), process), caps)
             }
-            Self::Match(branches, processes) => {
+            Self::Case(branches, processes) => {
                 let mut fixed_processes = Vec::new();
                 let mut caps = Captures::new();
                 for process in processes {
@@ -303,7 +303,7 @@ impl<Typ: Clone> Command<Typ> {
                     caps.extend(caps1);
                 }
                 (
-                    Self::Match(branches.clone(), fixed_processes.into_boxed_slice()),
+                    Self::Case(branches.clone(), fixed_processes.into_boxed_slice()),
                     caps,
                 )
             }
@@ -362,10 +362,10 @@ impl<Typ: Clone> Command<Typ> {
                 consume(param.clone(), param_type.clone());
                 process.types_at_spans(consume);
             }
-            Self::Choose(_, process) => {
+            Self::Signal(_, process) => {
                 process.types_at_spans(consume);
             }
-            Self::Match(_, branches) => {
+            Self::Case(_, branches) => {
                 for process in branches {
                     process.types_at_spans(consume);
                 }
@@ -540,12 +540,12 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Choose(chosen, process) => {
+                    Command::Signal(chosen, process) => {
                         write!(f, ".{}", chosen)?;
                         process.pretty(f, indent)
                     }
 
-                    Command::Match(choices, branches) => {
+                    Command::Case(choices, branches) => {
                         write!(f, " {{")?;
                         for (choice, process) in choices.iter().zip(branches.iter()) {
                             indentation(f, indent + 1)?;

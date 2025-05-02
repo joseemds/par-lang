@@ -1,6 +1,6 @@
 use indexmap::{IndexMap, IndexSet};
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fmt::{self, Write},
     sync::{Arc, RwLock},
 };
@@ -66,8 +66,8 @@ pub enum Type {
     Name(Span, Name, Vec<Type>),
     Send(Span, Box<Self>, Box<Self>),
     Receive(Span, Box<Self>, Box<Self>),
-    Either(Span, IndexMap<Name, Self>),
-    Choice(Span, IndexMap<Name, Self>),
+    Either(Span, BTreeMap<Name, Self>),
+    Choice(Span, BTreeMap<Name, Self>),
     /// ! (unit)
     Break(Span),
     /// ? (bottom)
@@ -1535,7 +1535,7 @@ impl Context {
                 )
             }
 
-            Command::Choose(chosen, process) => {
+            Command::Signal(chosen, process) => {
                 let Type::Choice(_, branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1552,10 +1552,10 @@ impl Context {
                 };
                 self.put(span, object.clone(), branch_type.clone())?;
                 let (process, inferred_types) = analyze_process(self, process)?;
-                (Command::Choose(chosen.clone(), process), inferred_types)
+                (Command::Signal(chosen.clone(), process), inferred_types)
             }
 
-            Command::Match(branches, processes) => {
+            Command::Case(branches, processes) => {
                 let Type::Either(_, required_branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1609,7 +1609,7 @@ impl Context {
                 }
 
                 (
-                    Command::Match(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Case(Arc::clone(branches), Box::from(typed_processes)),
                     inferred_type,
                 )
             }
@@ -1951,17 +1951,17 @@ impl Context {
                 )
             }
 
-            Command::Choose(_, _) => {
+            Command::Signal(_, _) => {
                 return Err(TypeError::TypeMustBeKnownAtThisPoint(
                     span.clone(),
                     subject.clone(),
                 ))
             }
 
-            Command::Match(branches, processes) => {
+            Command::Case(branches, processes) => {
                 let original_context = self.clone();
                 let mut typed_processes = Vec::new();
-                let mut branch_types = IndexMap::new();
+                let mut branch_types = BTreeMap::new();
 
                 for (branch, process) in branches.iter().zip(processes.iter()) {
                     *self = original_context.clone();
@@ -1971,7 +1971,7 @@ impl Context {
                 }
 
                 (
-                    Command::Match(Arc::clone(branches), Box::from(typed_processes)),
+                    Command::Case(Arc::clone(branches), Box::from(typed_processes)),
                     Type::Either(span.clone(), branch_types),
                 )
             }

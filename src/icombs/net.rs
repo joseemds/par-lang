@@ -1,7 +1,6 @@
 //! This module contains a simple implementation for Interaction Combinators.
 //! It is not performant; it's mainly here to act as a storage and interchange format
 
-use std::any::Any;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -36,18 +35,9 @@ pub enum Tree {
     Choice(Box<Tree>, Arc<[usize]>),
     Var(usize),
     Package(usize),
-    Ext(
-        Box<
-            dyn FnOnce(
-                    &mut Net,
-                    Result<Tree, Box<dyn Any + Send + Sync>>,
-                    Box<dyn Any + Send + Sync>,
-                ) + Send
-                + Sync,
-        >,
-        Box<dyn Any + Send + Sync>,
-    ),
     Primitive(PrimitiveComb),
+    SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
+    IntRequest(oneshot::Sender<i128>),
 }
 
 impl Tree {
@@ -66,36 +56,28 @@ impl Tree {
         Tree::Era
     }
 
-    /// Construct an external node, given its closure and data.
-    pub fn ext(
-        f: impl FnOnce(&mut Net, Result<Tree, Box<dyn Any + Send + Sync>>, Box<dyn Any + Send + Sync>)
-            + 'static
-            + Send
-            + Sync,
-        a: impl Any + Send + Sync,
-    ) -> Tree {
-        Tree::Ext(Box::new(f), Box::new(a))
-    }
-
     pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
-        use Tree::*;
         match self {
-            Var(x) => *x = m(*x),
-            Con(a, b) => {
+            Self::Var(x) => *x = m(*x),
+            Self::Con(a, b) => {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Signal(_, _, payload) => {
+            Self::Signal(_, _, payload) => {
                 payload.map_vars(m);
             }
-            Choice(context, _) => {
+            Self::Choice(context, _) => {
                 context.map_vars(m);
             }
-            Dup(a, b) => {
+            Self::Dup(a, b) => {
                 a.map_vars(m);
                 b.map_vars(m);
             }
-            Era | Package(_) | Ext(_, _) | Primitive(_) => {}
+            Self::Era
+            | Self::Package(_)
+            | Self::Primitive(_)
+            | Self::SignalRequest(_)
+            | Self::IntRequest(_) => {}
         }
     }
 }
@@ -119,8 +101,9 @@ impl core::fmt::Debug for Tree {
                 .finish(),
             Self::Var(id) => f.debug_tuple("Var").field(id).finish(),
             Self::Package(id) => f.debug_tuple("Package").field(id).finish(),
-            Self::Ext(_, _) => f.debug_tuple("Ext").finish_non_exhaustive(),
             Self::Primitive(p) => f.debug_tuple("Primitive").field(p).finish(),
+            Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
+            Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
         }
     }
 }
@@ -135,8 +118,9 @@ impl Clone for Tree {
             Self::Choice(context, branches) => Self::Choice(context.clone(), Arc::clone(branches)),
             Self::Var(id) => Self::Var(id.clone()),
             Self::Package(id) => Self::Package(id.clone()),
-            Self::Ext(_, _) => panic!("Can't clone `Ext` tree!"),
             Self::Primitive(p) => Self::Primitive(p.clone()),
+            Self::SignalRequest(_) => panic!("cannot clone Tree::RespondSignal"),
+            Self::IntRequest(_) => panic!("cannot clone Tree::RespondInt"),
         }
     }
 }
@@ -147,7 +131,7 @@ pub struct Rewrites {
     pub annihilate: u128,
     pub signal: u128,
     pub era: u128,
-    pub ext: u128,
+    pub resp: u128,
     pub expand: u128,
     last_busy_start: Option<Instant>,
     pub busy_duration: Duration,
@@ -163,7 +147,7 @@ impl core::ops::Add<Rewrites> for Rewrites {
             signal: self.signal + rhs.signal,
             era: self.era + rhs.era,
             expand: self.expand + rhs.expand,
-            ext: self.ext + rhs.ext,
+            resp: self.resp + rhs.resp,
             last_busy_start: match (self.last_busy_start, rhs.last_busy_start) {
                 (None, None) => None,
                 (Some(t), None) | (None, Some(t)) => Some(t),
@@ -176,7 +160,7 @@ impl core::ops::Add<Rewrites> for Rewrites {
 
 impl Rewrites {
     pub fn total(&self) -> u128 {
-        self.commute + self.annihilate + self.era + self.ext
+        self.commute + self.annihilate + self.era + self.resp
     }
 
     pub fn total_per_second(&self) -> u128 {
@@ -306,10 +290,6 @@ impl Net {
                 self.link(*b1, Tree::Signal(index, size, Box::new(a10)));
                 self.rewrites.commute += 1;
             }
-            (Ext(f, a), b) | (b, Ext(f, a)) => {
-                f(self, Ok(b), a);
-                self.rewrites.ext += 1;
-            }
             (Package(_), Era) | (Era, Package(_)) => {}
             (Package(id), Dup(a, b)) | (Dup(a, b), Package(id)) => {
                 self.link(*a, Package(id));
@@ -327,15 +307,19 @@ impl Net {
             (Primitive(p), a) | (a, Primitive(p)) => {
                 p.interact(self, a);
             }
+            (SignalRequest(tx), Signal(index, size, payload))
+            | (Signal(index, size, payload), SignalRequest(tx)) => {
+                tx.send((index, size, payload)).expect("receiver dropped");
+            }
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
     }
 
-    pub fn offset_variables(&mut self, offset: usize) {
+    fn offset_variables(&mut self, offset: usize) {
         self.map_vars(&mut |var_id| var_id + offset);
     }
 
-    pub fn dereference_package(&mut self, package: usize) -> Tree {
+    fn dereference_package(&mut self, package: usize) -> Tree {
         let net = self
             .packages
             .get(&package)
@@ -391,7 +375,11 @@ impl Net {
                     *tree = a;
                 }
             }
-            Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_) => {}
+            Tree::Era
+            | Tree::Package(_)
+            | Tree::Primitive(_)
+            | Tree::SignalRequest(_)
+            | Tree::IntRequest(_) => {}
         }
     }
 
@@ -486,10 +474,12 @@ impl Net {
                 format!("choice({} {:?})", self.show_tree(context), branches,)
             }
             Tree::Package(id) => format!("@{}", id),
-            Tree::Ext(..) => format!("<ext>"),
 
             Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
             Tree::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
+
+            Tree::SignalRequest(_) => format!("<respond_signal>"),
+            Tree::IntRequest(_) => format!("<respond_int>"),
         }
     }
 
@@ -521,7 +511,11 @@ impl Net {
                     self.assert_tree_not_contains(tree, idx);
                 }
             }
-            Tree::Era | Tree::Package(_) | Tree::Ext(_, _) | Tree::Primitive(_) => {}
+            Tree::Era
+            | Tree::Package(_)
+            | Tree::Primitive(_)
+            | Tree::SignalRequest(_)
+            | Tree::IntRequest(_) => {}
         }
     }
 
@@ -589,8 +583,9 @@ impl Net {
                     panic!("Package with id {idx} is not found")
                 }
             }
-            Tree::Ext(_, _) => vec![],
             Tree::Primitive(_) => vec![],
+            Tree::SignalRequest(_) => vec![],
+            Tree::IntRequest(_) => vec![],
         }
     }
 }

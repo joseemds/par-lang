@@ -9,6 +9,10 @@ pub enum PrimitiveComb {
 impl PrimitiveComb {
     pub fn interact(self, net: &mut Net, tree: Tree) {
         match (self, tree) {
+            (Self::Int(i), Tree::IntRequest(c)) => {
+                c.send(i).expect("receiver dropped");
+            }
+
             (Self::Int(_), Tree::Era) => {}
             (Self::Int(i), Tree::Dup(a, b)) => {
                 net.link(Tree::Primitive(Self::Int(i)), *a);

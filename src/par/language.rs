@@ -1,6 +1,6 @@
 // why not rename this file to ast.rs?
 
-use std::{fmt::Display, hash::Hash, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, hash::Hash, sync::Arc};
 
 use super::{
     primitive::Primitive,
@@ -8,7 +8,6 @@ use super::{
     types::Type,
 };
 use crate::location::{Point, Span, Spanning};
-use indexmap::IndexMap;
 
 #[derive(Clone, Debug)]
 pub struct Name {
@@ -104,7 +103,7 @@ pub enum Construct {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConstructBranches(pub IndexMap<Name, ConstructBranch>);
+pub struct ConstructBranches(pub BTreeMap<Name, ConstructBranch>);
 
 #[derive(Clone, Debug)]
 pub enum ConstructBranch {
@@ -130,7 +129,7 @@ pub enum Apply {
 }
 
 #[derive(Clone, Debug)]
-pub struct ApplyBranches(pub IndexMap<Name, ApplyBranch>);
+pub struct ApplyBranches(pub BTreeMap<Name, ApplyBranch>);
 
 #[derive(Clone, Debug)]
 pub enum ApplyBranch {
@@ -176,7 +175,7 @@ pub enum Command {
 }
 
 #[derive(Clone, Debug)]
-pub struct CommandBranches(pub IndexMap<Name, CommandBranch>);
+pub struct CommandBranches(pub BTreeMap<Name, CommandBranch>);
 
 #[derive(Clone, Debug)]
 pub enum CommandBranch {
@@ -544,7 +543,7 @@ impl Construct {
                     span: span.clone(),
                     name: Name::result(),
                     typ: (),
-                    command: process::Command::Choose(chosen.clone(), process),
+                    command: process::Command::Signal(chosen.clone(), process),
                 })
             }
 
@@ -561,7 +560,7 @@ impl Construct {
                     span: span.clone(),
                     name: Name::result(),
                     typ: (),
-                    command: process::Command::Match(branches, processes),
+                    command: process::Command::Case(branches, processes),
                 })
             }
 
@@ -715,7 +714,7 @@ impl Apply {
                     span: span.clone(),
                     name: Name::object(),
                     typ: (),
-                    command: process::Command::Choose(chosen.clone(), process),
+                    command: process::Command::Signal(chosen.clone(), process),
                 })
             }
 
@@ -732,7 +731,7 @@ impl Apply {
                     span: span.clone(),
                     name: Name::object(),
                     typ: (),
-                    command: process::Command::Match(branches, processes),
+                    command: process::Command::Case(branches, processes),
                 })
             }
 
@@ -936,7 +935,7 @@ impl Command {
                     span: span.clone(),
                     name: object_name.clone(),
                     typ: (),
-                    command: process::Command::Choose(chosen.clone(), process),
+                    command: process::Command::Signal(chosen.clone(), process),
                 })
             }
 
@@ -958,7 +957,7 @@ impl Command {
                     span: span.clone(),
                     name: object_name.clone(),
                     typ: (),
-                    command: process::Command::Match(branches, processes),
+                    command: process::Command::Case(branches, processes),
                 })
             }
 

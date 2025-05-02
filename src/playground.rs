@@ -3,14 +3,18 @@ use std::{
     fmt::Write,
     fs::File,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
-use crate::par::program::{Definition, NameWithType, Program, TypeOnHover};
+use crate::{
+    icombs::readback::Handle,
+    par::program::{Definition, NameWithType, Program, TypeOnHover},
+    readback::Element,
+};
 use crate::{
     icombs::{compile_file, IcCompiled},
     par::{
@@ -19,7 +23,6 @@ use crate::{
         process::Expression,
         types::TypeError,
     },
-    readback::ReadbackState,
     spawn::TokioSpawn,
 };
 use crate::{location::Span, par::program::CheckedProgram};
@@ -33,10 +36,9 @@ pub struct Playground {
     editor_font_size: f32,
     show_compiled: bool,
     show_ic: bool,
-    readback_state: Option<crate::readback::ReadbackState>,
+    element: Option<Arc<Mutex<Element>>>,
     cursor_pos: (usize, usize),
     theme_mode: ThemeMode,
-    last_is_dark: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,10 +209,9 @@ impl Playground {
             editor_font_size: 16.0,
             show_compiled: false,
             show_ic: false,
-            readback_state: Default::default(),
+            element: None,
             cursor_pos: (0, 0),
             theme_mode: ThemeMode::System,
-            last_is_dark: initial_is_dark,
         });
 
         if let Some(path) = file_path {
@@ -242,7 +243,6 @@ impl eframe::App for Playground {
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
 
         ctx.set_visuals(visuals);
-        self.last_is_dark = is_dark;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::SidePanel::left("interaction")
@@ -396,7 +396,7 @@ impl Playground {
     }
 
     fn readback(
-        readback_state: &mut Option<ReadbackState>,
+        element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
         program: Arc<CheckedProgram>,
         compiled: &IcCompiled,
@@ -407,12 +407,14 @@ impl Playground {
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
-                *readback_state = Some(ReadbackState::initialize(
-                    ui,
-                    net,
-                    tree,
+
+                let ctx = ui.ctx().clone();
+                *element = Some(Element::initialize(
+                    Arc::new(move || {
+                        ctx.request_repaint();
+                    }),
                     Arc::new(TokioSpawn),
-                    &program,
+                    Handle::new(program.type_defs.clone(), Arc::new(Mutex::new(net)), tree),
                 ));
             }
         }
@@ -454,7 +456,7 @@ impl Playground {
                                 |ui| {
                                     egui::ScrollArea::vertical().show(ui, |ui| {
                                         Self::readback(
-                                            &mut self.readback_state,
+                                            &mut self.element,
                                             ui,
                                             checked.program.clone(),
                                             ic_compiled,
@@ -517,8 +519,8 @@ impl Playground {
                                 }
 
                                 if !self.show_compiled && !self.show_ic {
-                                    if let Some(rb) = &mut self.readback_state {
-                                        rb.show_readback(ui, checked.program.clone())
+                                    if let Some(element) = &mut self.element {
+                                        element.lock().unwrap().show(ui);
                                     }
                                 }
                             }

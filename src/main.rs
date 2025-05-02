@@ -3,15 +3,13 @@ use clap::{arg, command, value_parser, Command};
 use eframe::egui;
 use std::path::PathBuf;
 
-pub mod icombs;
+mod icombs;
 mod language_server;
 mod location;
 mod par;
 mod playground;
 mod readback;
 mod spawn;
-#[cfg(test)]
-mod tests;
 
 fn main() {
     let matches = command!()
