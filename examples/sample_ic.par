@@ -6,7 +6,7 @@ dec false: Bool
 def false = .false!
 
 dec not: [Bool] Bool
-def not = [x] x {
+def not = [x] x.case {
 	.true! => .false!,
 	.false! => .true!
 }
@@ -27,21 +27,21 @@ def tree =
 
 
 dec xor: [Bool][Bool] Bool
-def xor = [a][b] a{
+def xor = [a][b] a.case {
 	.true! => :not(b),
 	.false! => b
 }
 
 dec xor_tree: [Tree] Bool
 
-def xor_tree = [tree: Tree] tree begin {
+def xor_tree = [tree: Tree] tree.begin.case {
 	.empty! => .true!,
-	.item(lst1)(lst2)! => :xor(lst1 loop)(lst2 loop)
+	.item(lst1)(lst2)! => :xor(lst1.loop)(lst2.loop)
 }
 
 
 dec is_some: [Option<Bool>] Bool
-def is_some = [option: Option<Bool>] option {
+def is_some = [option: Option<Bool>] option.case {
     .some val => val,
     .none! => .false!
 }
@@ -50,12 +50,12 @@ dec main: Tree
 def main = .empty!
 
 dec quant: (type T) (T) (T) [T] [T] Bool
-def quant = (type Bool) (.true!) (.false!) [x] [y] x {
-    .true! => y {
+def quant = (type Bool) (.true!) (.false!) [x] [y] x.case {
+    .true! => y.case {
         .true! => .false!,
         .false! => .true!
     }
-    .false! => y {
+    .false! => y.case {
         .true! => .false!,
         .false! => .true!
     }
@@ -69,31 +69,31 @@ type List<T> = recursive either {
   .item(T) self
 }
 
-type Seq<T> = iterative {
+type Seq<T> = iterative choice {
   .close => !
   .next  => (T) self
 }
 
-type Mapper<A, B> = iterative {
+type Mapper<A, B> = iterative choice {
   .close    => !
   .apply(A) => (B) self
 }
 
 dec mapList : [type A, B] [List<A>, Mapper<A, B>] List<B>
 def mapList = [type A, B] [list, mapper]
-  list begin {
+  list.begin.case {
     .empty! => do {
       mapper.close?
     } in .empty!
 
     .item(x) xs => do {
       mapper.apply(x)[y]
-    } in .item(y) xs loop
+    } in .item(y) xs.loop
   }
 
 dec mapSeq : [type A, B] [Seq<A>, Mapper<A, B>] Seq<B>
 def mapSeq = [type A, B] [seq, mapper]
-  begin {
+  begin case {
     .close => do {
       seq.close?
       mapper.close?
@@ -112,20 +112,20 @@ def listrgb =
   .empty!
 
 dec red_forever : Seq<Color>
-def red_forever = begin {
+def red_forever = begin case {
   .close => !
   .next  => (.red!) loop
 }
 
 dec rgb : [Color] Color
-def rgb = [value] value {
+def rgb = [value] value.case {
   .red!   => .red!
   .green! => .green!
   .blue!  => .blue!
 }
 
 dec swap : [Bool] Bool
-def swap = [bool] bool {
+def swap = [bool] bool.case {
   .true! => .false!
   .false! => .true!
 }
@@ -133,13 +133,13 @@ def swap = [bool] bool {
 
 def bools_forever =
   let bool: Bool = .true! in
-  begin {
-    .close => bool {
+  begin case {
+    .close => bool.case {
       .true! => !
       .false! => !
     }
     .next => {
-      let (output: Bool, bool: Bool)! = bool {
+      let (output: Bool, bool: Bool)! = bool.case {
         .true! => (.true!, .false!)!
         .false! => (.false!, .true!)!
       } in (output) loop
@@ -147,19 +147,19 @@ def bools_forever =
   }
 
 dec zip : [type T, U] [List<T>, Seq<U>] List<(T, U)!>
-def zip = [type T, U] [list, seq] list begin {
+def zip = [type T, U] [list, seq] list.begin.case {
   .empty! => do {
     seq.close?
   } in .empty!
 
   .item(x) xs => do {
     seq.next[y]
-  } in .item((x, y)!) xs loop
+  } in .item((x, y)!) xs.loop
 }
 
 def zipped = :zip(type Color, Color)(:listrgb, :red_forever)
 
-def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
+def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin case {
   .close => do {
     seq1.close?
     seq2.close?
@@ -175,24 +175,24 @@ def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
 
 type Alternate<A, B> = recursive either {
   .remainder either {
-    .left List<A>
-    .right List<B>
-  }
-  .choice {
-    .left => (A) self
-    .right => (B) self
-  }
+    .left List<A>,
+    .right List<B>,
+  },
+  .choose choice {
+    .left => (A) self,
+    .right => (B) self,
+  },
 }
 
 dec alternate : [type A, B] [List<A>, List<B>] Alternate<A, B>
 
-def alternate = [type A, B] [la, lb] la begin :a {
+def alternate = [type A, B] [la, lb] la.begin/a.case {
   .empty! => .remainder .right lb,
-  .item(ha) la => lb begin :b {
+  .item(ha) la => lb.begin/b.case {
     .empty! => .remainder .left .item (ha) la,
-    .item (hb) lb => .choice {
-      .left => (ha) let lb: List<B> = .item (hb) lb in la loop:a
-      .right => (hb) lb loop:b
+    .item (hb) lb => .choose case {
+      .left => (ha) let lb: List<B> = .item (hb) lb in la.loop/a
+      .right => (hb) lb.loop/b
     }
   }
 }

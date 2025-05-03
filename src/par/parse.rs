@@ -25,25 +25,11 @@ use winnow::{
     Parser,
 };
 
-/*impl From<&Token<'_>> for Name {
-    fn from(token: &Token) -> Self {
-        Self {
-            span: token.span,
-            modules: vec![],
-            primary: token.raw.to_owned(),
-        }
-    }
-}*/
-
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MyError<C = StrContext> {
     context: Vec<(usize, ContextError<C>)>,
 }
-// impl<C> MyError<C> {
-//     fn eof_offset(&self) -> usize {
-//         self.context.iter().map(|x| x.0).min().unwrap_or(usize::MAX)
-//     }
-// }
+
 pub type Error_ = MyError;
 pub type Error = ErrMode<Error_>;
 impl<I: Stream, C: core::fmt::Debug> ParserError<I> for MyError<C> {
@@ -139,31 +125,6 @@ where
     ParseNext: Parser<Input, Output, Error>,
 {
     trace("commit_after", (prefix, cut_err(parser)))
-}
-
-/// Like `commit_after` but the prefix is optional and only cuts if the prefix is `Some`.
-/// Also returns the prefix.
-fn opt_commit_after<Input, Prefix, Output, Error, PrefixParser, ParseNext>(
-    prefix: PrefixParser,
-    mut parser: ParseNext,
-) -> impl Parser<Input, (Option<Prefix>, Output), Error>
-where
-    Input: Stream,
-    Error: ParserError<Input> + ModalError,
-    PrefixParser: Parser<Input, Prefix, Error>,
-    ParseNext: Parser<Input, Output, Error>,
-{
-    let mut prefix = opt(prefix);
-    trace("opt_commit_after", move |input: &mut Input| {
-        let prefix = prefix.parse_next(input)?;
-        if prefix.is_some() {
-            let n = cut_err(parser.by_ref()).parse_next(input)?;
-            Ok((prefix, n))
-        } else {
-            let n = parser.parse_next(input)?;
-            Ok((prefix, n))
-        }
-    })
 }
 
 fn lowercase_identifier(input: &mut Input) -> Result<(Span, String)> {
@@ -504,8 +465,10 @@ fn typ_either(input: &mut Input) -> Result<Type> {
 }
 
 fn typ_choice(input: &mut Input) -> Result<Type> {
-    branches_body(typ_branch)
-        .map(|(span, branches)| Type::Choice(span, branches))
+    commit_after(t(TokenKind::Choice), branches_body(typ_branch))
+        .map(|(pre, (branches_span, branches))| {
+            Type::Choice(pre.span.join(branches_span), branches)
+        })
         .parse_next(input)
 }
 
@@ -816,6 +779,7 @@ fn expr_fork(input: &mut Input) -> Result<Expression> {
 fn construction(input: &mut Input) -> Result<Construct> {
     alt((
         cons_begin,
+        cons_unfounded,
         cons_loop,
         cons_then,
         cons_choose,
@@ -875,8 +839,10 @@ fn cons_choose(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_either(input: &mut Input) -> Result<Construct> {
-    branches_body(cons_branch)
-        .map(|(span, branches)| Construct::Either(span, ConstructBranches(branches)))
+    commit_after(t(TokenKind::Case), branches_body(cons_branch))
+        .map(|(pre, (branches_span, branches))| {
+            Construct::Either(pre.span.join(branches_span), ConstructBranches(branches))
+        })
         .parse_next(input)
 }
 
@@ -887,22 +853,25 @@ fn cons_break(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_begin(input: &mut Input) -> Result<Construct> {
-    opt_commit_after(
-        t(TokenKind::Unfounded),
-        commit_after(t(TokenKind::Begin), (loop_label, construction)),
-    )
-    .map(
-        |(unfounded, (begin, (label, construct)))| Construct::Begin {
-            span: match unfounded {
-                Some(unfounded) => unfounded.span.join(construct.span()),
-                None => begin.span.join(construct.span()),
-            },
-            unfounded: unfounded.is_some(),
+    commit_after(t(TokenKind::Begin), (loop_label, construction))
+        .map(|(unfounded, (label, construct))| Construct::Begin {
+            span: unfounded.span.join(construct.span()),
+            unfounded: false,
             label,
             then: Box::new(construct),
-        },
-    )
-    .parse_next(input)
+        })
+        .parse_next(input)
+}
+
+fn cons_unfounded(input: &mut Input) -> Result<Construct> {
+    commit_after(t(TokenKind::Unfounded), (loop_label, construction))
+        .map(|(unfounded, (label, construct))| Construct::Begin {
+            span: unfounded.span.join(construct.span()),
+            unfounded: true,
+            label,
+            then: Box::new(construct),
+        })
+        .parse_next(input)
 }
 
 fn cons_loop(input: &mut Input) -> Result<Construct> {
@@ -1009,6 +978,7 @@ fn application(input: &mut Input) -> Result<Expression> {
 fn apply(input: &mut Input) -> Result<Option<Apply>> {
     opt(alt((
         apply_begin,
+        apply_unfounded,
         apply_loop,
         apply_choose,
         apply_either,
@@ -1037,7 +1007,7 @@ fn apply_send(input: &mut Input) -> Result<Apply> {
 }
 
 fn apply_choose(input: &mut Input) -> Result<Apply> {
-    commit_after(t(TokenKind::Dot), (term_name, apply))
+    (t(TokenKind::Dot), (term_name, apply))
         .map(|(pre, (chosen, then))| {
             let then = match then {
                 Some(then) => then,
@@ -1049,28 +1019,51 @@ fn apply_choose(input: &mut Input) -> Result<Apply> {
 }
 
 fn apply_either(input: &mut Input) -> Result<Apply> {
-    branches_body(apply_branch)
-        .map(|(span, branches)| Apply::Either(span, ApplyBranches(branches)))
-        .parse_next(input)
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Case)),
+        branches_body(apply_branch),
+    )
+    .map(|((pre, _), (branches_span, branches))| {
+        Apply::Either(pre.span.join(branches_span), ApplyBranches(branches))
+    })
+    .parse_next(input)
 }
 
 fn apply_begin(input: &mut Input) -> Result<Apply> {
-    opt_commit_after(
-        t(TokenKind::Unfounded),
-        commit_after(t(TokenKind::Begin), (loop_label, apply)),
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Begin)),
+        (loop_label, apply),
     )
-    .map(|(unfounded, (begin, (label, then)))| {
+    .map(|((pre, _), (label, then))| {
         let then = match (&label, then) {
             (_, Some(then)) => then,
             (Some(label), None) => Apply::Noop(label.span.end),
-            (None, None) => Apply::Noop(begin.span.end),
+            (None, None) => Apply::Noop(pre.span.end),
         };
         Apply::Begin {
-            span: match unfounded {
-                Some(unfounded) => unfounded.span.join(then.span()),
-                None => begin.span.join(then.span()),
-            },
-            unfounded: unfounded.is_some(),
+            span: pre.span.join(then.span()),
+            unfounded: true,
+            label,
+            then: Box::new(then),
+        }
+    })
+    .parse_next(input)
+}
+
+fn apply_unfounded(input: &mut Input) -> Result<Apply> {
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Unfounded)),
+        (loop_label, apply),
+    )
+    .map(|((pre, _), (label, then))| {
+        let then = match (&label, then) {
+            (_, Some(then)) => then,
+            (Some(label), None) => Apply::Noop(label.span.end),
+            (None, None) => Apply::Noop(pre.span.end),
+        };
+        Apply::Begin {
+            span: pre.span.join(then.span()),
+            unfounded: true,
             label,
             then: Box::new(then),
         }
@@ -1079,12 +1072,12 @@ fn apply_begin(input: &mut Input) -> Result<Apply> {
 }
 
 fn apply_loop(input: &mut Input) -> Result<Apply> {
-    commit_after(t(TokenKind::Loop), loop_label)
-        .map(|(token, label)| {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), loop_label)
+        .map(|((pre1, pre2), label)| {
             Apply::Loop(
                 match &label {
-                    Some(label) => token.span.join(label.span),
-                    None => token.span.clone(),
+                    Some(label) => pre1.span.join(label.span),
+                    None => pre1.span.join(pre2.span),
                 },
                 label,
             )
@@ -1226,6 +1219,7 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
             cmd_break,
             cmd_continue,
             cmd_begin,
+            cmd_unfounded,
             cmd_loop,
             cmd_send_type,
             cmd_send,
@@ -1290,7 +1284,7 @@ fn cmd_receive(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_choose(input: &mut Input) -> Result<Command> {
-    commit_after(t(TokenKind::Dot), (term_name, cmd))
+    (t(TokenKind::Dot), (term_name, cmd))
         .map(|(pre, (name, cmd))| {
             let cmd = match cmd {
                 Some(cmd) => cmd,
@@ -1302,11 +1296,18 @@ fn cmd_choose(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_either(input: &mut Input) -> Result<Command> {
-    (branches_body(cmd_branch), opt(pass_process))
-        .map(|((span, branches), pass_process)| {
-            Command::Either(span, CommandBranches(branches), pass_process.map(Box::new))
-        })
-        .parse_next(input)
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Case)),
+        (branches_body(cmd_branch), opt(pass_process)),
+    )
+    .map(|((pre, _), ((branches_span, branches), pass_process))| {
+        Command::Either(
+            pre.span.join(branches_span),
+            CommandBranches(branches),
+            pass_process.map(Box::new),
+        )
+    })
+    .parse_next(input)
 }
 
 fn cmd_break(input: &mut Input) -> Result<Command> {
@@ -1325,22 +1326,37 @@ fn cmd_continue(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_begin(input: &mut Input) -> Result<Command> {
-    opt_commit_after(
-        t(TokenKind::Unfounded),
-        commit_after(t(TokenKind::Begin), (loop_label, cmd)),
+    commit_after((t(TokenKind::Dot), t(TokenKind::Begin)), (loop_label, cmd))
+        .map(|((pre, _), (label, cmd))| {
+            let cmd = match (&label, cmd) {
+                (_, Some(cmd)) => cmd,
+                (Some(label), None) => noop_cmd(label.span.end),
+                (None, None) => noop_cmd(pre.span.end),
+            };
+            Command::Begin {
+                span: pre.span.join(cmd.span()),
+                unfounded: false,
+                label,
+                then: Box::new(cmd),
+            }
+        })
+        .parse_next(input)
+}
+
+fn cmd_unfounded(input: &mut Input) -> Result<Command> {
+    commit_after(
+        (t(TokenKind::Dot), t(TokenKind::Unfounded)),
+        (loop_label, cmd),
     )
-    .map(|(unfounded, (begin, (label, cmd)))| {
+    .map(|((pre, _), (label, cmd))| {
         let cmd = match (&label, cmd) {
             (_, Some(cmd)) => cmd,
             (Some(label), None) => noop_cmd(label.span.end),
-            (None, None) => noop_cmd(begin.span.end),
+            (None, None) => noop_cmd(pre.span.end),
         };
         Command::Begin {
-            span: match unfounded {
-                Some(unfounded) => unfounded.span.join(cmd.span()),
-                None => begin.span.join(cmd.span()),
-            },
-            unfounded: unfounded.is_some(),
+            span: pre.span.join(cmd.span()),
+            unfounded: true,
             label,
             then: Box::new(cmd),
         }
@@ -1349,12 +1365,12 @@ fn cmd_begin(input: &mut Input) -> Result<Command> {
 }
 
 fn cmd_loop(input: &mut Input) -> Result<Command> {
-    commit_after(t(TokenKind::Loop), loop_label)
-        .map(|(token, label)| {
+    commit_after((t(TokenKind::Dot), t(TokenKind::Loop)), loop_label)
+        .map(|((pre1, pre2), label)| {
             Command::Loop(
                 match &label {
-                    Some(label) => token.span.join(label.span),
-                    None => token.span.clone(),
+                    Some(label) => pre1.span.join(label.span),
+                    None => pre1.span.join(pre2.span),
                 },
                 label,
             )
@@ -1480,7 +1496,7 @@ fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
 }
 
 fn loop_label(input: &mut Input) -> Result<Option<Name>> {
-    opt(preceded(t(TokenKind::Colon), term_name)).parse_next(input)
+    opt(preceded(t(TokenKind::Slash), term_name)).parse_next(input)
 }
 
 #[cfg(test)]

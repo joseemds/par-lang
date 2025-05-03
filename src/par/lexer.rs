@@ -19,6 +19,7 @@ pub enum TokenKind {
     Lt,
     Gt,
 
+    Slash,
     Colon,
     Comma,
     Dot,
@@ -33,7 +34,9 @@ pub enum TokenKind {
     LowercaseIdentifier,
     UppercaseIdentifier,
     Begin,
+    Case,
     Chan,
+    Choice,
     Dec,
     Def,
     Do,
@@ -81,6 +84,7 @@ impl TokenKind {
             TokenKind::Lt => "<",
             TokenKind::Gt => ">",
 
+            TokenKind::Slash => "/",
             TokenKind::Colon => ":",
             TokenKind::Comma => ",",
             TokenKind::Dot => ".",
@@ -95,7 +99,9 @@ impl TokenKind {
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
             TokenKind::Begin => "begin",
+            TokenKind::Case => "case",
             TokenKind::Chan => "chan",
+            TokenKind::Choice => "choice",
             TokenKind::Dec => "dec",
             TokenKind::Def => "def",
             TokenKind::Do => "do",
@@ -179,7 +185,9 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     .parse_next(input)?;
                     let kind = match raw {
                         "begin" => TokenKind::Begin,
+                        "case" => TokenKind::Case,
                         "chan" => TokenKind::Chan,
+                        "choice" => TokenKind::Choice,
                         "dec" => TokenKind::Dec,
                         "def" => TokenKind::Def,
                         "do" => TokenKind::Do,
@@ -268,7 +276,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                         idx += raw.len();
                         None
                     } else {
-                        Some((raw, TokenKind::Unknown))
+                        Some((raw, TokenKind::Slash))
                     }
                 }
                 ',' => {

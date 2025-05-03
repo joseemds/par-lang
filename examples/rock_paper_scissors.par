@@ -6,14 +6,14 @@ type Move = either {
   .scissors!
 }
 
-type Player = iterative :game {
+type Player = iterative/game choice {
   .stop => !
-  .play_round => iterative :round {
-    .stop_round => self :game,
-    .play_move => (Move) {
-      .win  => self :game,
-      .lose => self :game,
-      .draw => self :round,
+  .play_round => iterative/round choice {
+    .stop_round => self/game,
+    .play_move => (Move) choice {
+      .win  => self/game,
+      .lose => self/game,
+      .draw => self/round,
     }
   }
 }
@@ -24,13 +24,13 @@ type Outcome = either {
   .too_long!
 }
 
-type Game = iterative {
+type Game = iterative choice {
   .stop => !
   .play_round => (Outcome) self
 }
 
 dec start_game : [Player, Player] Game
-def start_game = [p1, p2] begin :game {
+def start_game = [p1, p2] begin/game case {
   .stop => do {
     p1.stop?
     p2.stop?
@@ -40,44 +40,44 @@ def start_game = [p1, p2] begin :game {
     let limit: Nat = .add1.add1.add1.zero!
     p1.play_round
     p2.play_round
-  } in limit begin :round {
+  } in limit.begin/round.case {
     .zero! => do {
       p1.stop_round
       p2.stop_round
-    } in (.too_long!) loop :game
+    } in (.too_long!) loop/game
 
     .add1 limit => do {
       p1.play_move[move1]
       p2.play_move[move2]
-    } in :calculate_round(move1, move2) {
+    } in :calculate_round(move1, move2).case {
       .first! => do {
         p1.win
         p2.lose
-      } in (.first_won!) loop :game
+      } in (.first_won!) loop/game
 
       .second! => do {
         p1.lose
         p2.win
-      } in (.second_won!) loop :game
+      } in (.second_won!) loop/game
 
-      .draw! => do { p1.draw p2.draw } in limit loop :round
+      .draw! => do { p1.draw p2.draw } in limit.loop/round
     }
   }
 }
 
 dec calculate_round : [Move, Move] either { .first!, .second!, .draw! }
-def calculate_round = [move1, move2] move1 {
-  .rock! => move2 {
+def calculate_round = [move1, move2] move1.case {
+  .rock! => move2.case {
     .rock! => .draw!
     .paper! => .second!
     .scissors! => .first!
   }
-  .paper! => move2 {
+  .paper! => move2.case {
     .rock! => .first!
     .paper! => .draw!
     .scissors! => .second!
   }
-  .scissors! => move2 {
+  .scissors! => move2.case {
     .rock! => .second!
     .paper! => .first!
     .scissors! => .draw!

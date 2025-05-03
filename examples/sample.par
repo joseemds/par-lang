@@ -6,31 +6,31 @@ type List<T> = recursive either {
   .item(T) self
 }
 
-type Seq<T> = iterative {
+type Seq<T> = iterative choice {
   .close => !
   .next  => (T) self
 }
 
-type Mapper<A, B> = iterative {
+type Mapper<A, B> = iterative choice {
   .close    => !
   .apply(A) => (B) self
 }
 
 dec mapList : [type A, B] [List<A>, Mapper<A, B>] List<B>
 def mapList = [type A, B] [list, mapper]
-  list begin {
+  list.begin.case {
     .empty! => do {
       mapper.close?
     } in .empty!
 
     .item(x) xs => do {
       mapper.apply(x)[y]
-    } in .item(y) xs loop
+    } in .item(y) xs.loop
   }
 
 dec mapSeq : [type A, B] [Seq<A>, Mapper<A, B>] Seq<B>
 def mapSeq = [type A, B] [seq, mapper]
-  begin {
+  begin case {
     .close => do {
       seq.close?
       mapper.close?
@@ -49,20 +49,20 @@ def listrgb =
   .empty!
 
 dec red_forever : Seq<Color>
-def red_forever = begin {
+def red_forever = begin case {
   .close => !
   .next  => (.red!) loop
 }
 
 dec rgb : [Color] Color
-def rgb = [value] value {
+def rgb = [value] value.case {
   .red!   => .red!
   .green! => .green!
   .blue!  => .blue!
 }
 
 dec swap : [Bool] Bool
-def swap = [bool] bool {
+def swap = [bool] bool.case {
   .true! => .false!
   .false! => .true!
 }
@@ -75,13 +75,13 @@ def false = chan result { result.false! }
 
 def bools_forever =
   let bool: Bool = .true! in
-  begin {
-    .close => bool {
+  begin case {
+    .close => bool.case {
       .true! => !
       .false! => !
     }
     .next => {
-      let (output: Bool, bool: Bool)! = bool {
+      let (output: Bool, bool: Bool)! = bool.case {
         .true! => (.true!, .false!)!
         .false! => (.false!, .true!)!
       } in (output) loop
@@ -89,19 +89,19 @@ def bools_forever =
   }
 
 dec zip : [type T, U] [List<T>, Seq<U>] List<(T, U)!>
-def zip = [type T, U] [list, seq] list begin {
+def zip = [type T, U] [list, seq] list.begin.case {
   .empty! => do {
     seq.close?
   } in .empty!
 
   .item(x) xs => do {
     seq.next[y]
-  } in .item((x, y)!) xs loop
+  } in .item((x, y)!) xs.loop
 }
 
 def zipped = :zip(type Color, Color)(:listrgb, :red_forever)
 
-def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin {
+def zip2 = [type T, U] [seq1: Seq<T>, seq2: Seq<U>] begin case {
   .close => do {
     seq1.close?
     seq2.close?

@@ -15,13 +15,13 @@ type Tree<T> = recursive either {
 
 dec flatten : [type T] [Tree<T>] List<T>
 def flatten = [type T] [tree] chan yield {
-  let yield: chan List<T> = tree begin {
+  let yield: chan List<T> = tree.begin.case {
     .empty! => yield,
 
     .node(left, value, right)! => do {
-      let yield = left loop
+      let yield = left.loop
       yield.item(value)
-    } in right loop
+    } in right.loop
   }
 
   yield.empty!
