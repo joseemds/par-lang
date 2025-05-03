@@ -8,7 +8,7 @@ use super::{
     PrimitiveComb,
 };
 use crate::par::{
-    language::Name,
+    language::{GlobalName, LocalName},
     primitive::Primitive,
     process::{Captures, Command, Expression, Process},
     types::Type,
@@ -38,12 +38,12 @@ pub enum Error {
     /// Error that is emitted when a linear variable is not used
     UnusedVar(Span),
     UnexpectedType(Span, Type),
-    GlobalNotFound(Name),
+    GlobalNotFound(GlobalName),
     DependencyCycle {
-        global: Name,
-        dependents: IndexSet<Name>,
+        global: GlobalName,
+        dependents: IndexSet<GlobalName>,
     },
-    UnguardedLoop(Span, Option<Name>),
+    UnguardedLoop(Span, Option<LocalName>),
 }
 
 impl Error {
@@ -105,18 +105,18 @@ impl Default for TypedTree {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Var {
-    Name(Name),
-    Loop(Option<Name>),
+    Name(LocalName),
+    Loop(Option<LocalName>),
 }
 
-impl From<Name> for Var {
-    fn from(value: Name) -> Self {
+impl From<LocalName> for Var {
+    fn from(value: LocalName) -> Self {
         Var::Name(value)
     }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LoopLabel(Option<Name>);
+pub struct LoopLabel(Option<LocalName>);
 
 #[derive(Debug)]
 pub struct Context {
@@ -208,12 +208,12 @@ pub struct Compiler {
     net: Net,
     context: Context,
     type_defs: TypeDefs,
-    definitions: IndexMap<Name, Definition<Arc<Expression<Type>>>>,
-    global_name_to_id: IndexMap<Name, usize>,
+    definitions: IndexMap<GlobalName, Definition<Arc<Expression<Type>>>>,
+    global_name_to_id: IndexMap<GlobalName, usize>,
     id_to_ty: Vec<Type>,
     id_to_package: Vec<Net>,
     lazy_redexes: Vec<(Tree, Tree)>,
-    compile_global_stack: IndexSet<Name>,
+    compile_global_stack: IndexSet<GlobalName>,
 }
 
 impl Tree {
@@ -241,7 +241,7 @@ impl Compiler {
         }
     }
 
-    fn compile_global(&mut self, name: &Name) -> Result<TypedTree> {
+    fn compile_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
         if let Some(id) = self.global_name_to_id.get(name) {
             let ty = self.id_to_ty.get(*id).unwrap().clone();
             return Ok(TypedTree {
@@ -433,7 +433,7 @@ impl Compiler {
         }
     }
 
-    fn use_global(&mut self, name: &Name) -> Result<TypedTree> {
+    fn use_global(&mut self, name: &GlobalName) -> Result<TypedTree> {
         match self.compile_global(name) {
             Ok(value) => Ok(value),
             Err(Error::GlobalNotFound(_)) => Err(Error::GlobalNotFound(name.clone())),
@@ -441,7 +441,11 @@ impl Compiler {
         }
     }
 
-    fn use_variable(&mut self, name: &Name, in_command: bool) -> Result<(TypedTree, VariableKind)> {
+    fn use_variable(
+        &mut self,
+        name: &LocalName,
+        in_command: bool,
+    ) -> Result<(TypedTree, VariableKind)> {
         return self.use_var(&Var::Name(name.clone()), in_command);
     }
 
@@ -474,12 +478,8 @@ impl Compiler {
     fn normalize_type(&mut self, ty: Type) -> Type {
         match ty {
             Type::Name(loc, name, args) => {
-                if self.type_defs.vars.contains(&name) {
-                    return Type::Name(loc, name, args);
-                } else {
-                    let ty = self.type_defs.get(&loc, &name, &args).unwrap();
-                    self.normalize_type(ty)
-                }
+                let ty = self.type_defs.get(&loc, &name, &args).unwrap();
+                self.normalize_type(ty)
             }
             Type::Either(loc, branch_map) => Type::Either(loc, branch_map),
             Type::Choice(loc, branch_map) => Type::Choice(loc, branch_map),
@@ -563,7 +563,7 @@ impl Compiler {
     fn compile_command(
         &mut self,
         span: &Span,
-        name: Name,
+        name: LocalName,
         ty: Type,
         cmd: &Command<Type>,
     ) -> Result<()> {
@@ -808,7 +808,7 @@ pub fn compile_file(program: &CheckedProgram) -> Result<IcCompiled> {
 #[derive(Clone, Default)]
 pub struct IcCompiled {
     pub(crate) id_to_package: Arc<IndexMap<usize, Net>>,
-    pub(crate) name_to_id: IndexMap<Name, usize>,
+    pub(crate) name_to_id: IndexMap<GlobalName, usize>,
     pub(crate) id_to_ty: IndexMap<usize, Type>,
 }
 
@@ -828,12 +828,12 @@ impl Display for IcCompiled {
 }
 
 impl IcCompiled {
-    pub fn get_with_name(&self, name: &Name) -> Option<Net> {
+    pub fn get_with_name(&self, name: &GlobalName) -> Option<Net> {
         let id = self.name_to_id.get(name)?;
         self.id_to_package.get(id).cloned()
     }
 
-    pub fn get_type_of(&self, name: &Name) -> Option<Type> {
+    pub fn get_type_of(&self, name: &GlobalName) -> Option<Type> {
         let id = self.name_to_id.get(name)?;
         self.id_to_ty.get(id).cloned()
     }

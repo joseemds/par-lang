@@ -1,14 +1,14 @@
 use super::{
     language::{
         Apply, ApplyBranch, ApplyBranches, Command, CommandBranch, CommandBranches, Construct,
-        ConstructBranch, ConstructBranches, Expression, Pattern, Process,
+        ConstructBranch, ConstructBranches, Expression, GlobalName, Pattern, Process,
     },
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
 };
 use crate::location::{Point, Span, Spanning};
 use crate::par::{
-    language::Name,
+    language::LocalName,
     program::{Declaration, Definition, Program, TypeDef},
     types::Type,
 };
@@ -146,15 +146,31 @@ fn uppercase_identifier(input: &mut Input) -> Result<(Span, String)> {
         .parse_next(input)
 }
 
-fn local_name(input: &mut Input) -> Result<Name> {
+fn local_name(input: &mut Input) -> Result<LocalName> {
     lowercase_identifier
-        .map(|(span, string)| Name { span, string })
+        .map(|(span, string)| LocalName { span, string })
         .parse_next(input)
 }
 
-fn global_name(input: &mut Input) -> Result<Name> {
-    uppercase_identifier
-        .map(|(span, string)| Name { span, string })
+fn global_name(input: &mut Input) -> Result<GlobalName> {
+    (
+        opt((uppercase_identifier, t(TokenKind::Dot))),
+        uppercase_identifier,
+    )
+        .map(|(opt_module, (mut span, primary))| {
+            let module = match opt_module {
+                Some(((module_span, module), _)) => {
+                    span = module_span.join(span);
+                    Some(module)
+                }
+                None => None,
+            };
+            GlobalName {
+                span,
+                module,
+                primary,
+            }
+        })
         .parse_next(input)
 }
 
@@ -362,7 +378,7 @@ fn definition(input: &mut Input) -> Result<(Definition<Expression>, Option<Type>
 
 fn branches_body<'i, P, O>(
     branch: P,
-) -> impl Parser<Input<'i>, (Span, BTreeMap<Name, O>), Error> + use<'i, P, O>
+) -> impl Parser<Input<'i>, (Span, BTreeMap<LocalName, O>), Error> + use<'i, P, O>
 where
     P: Parser<Input<'i>, O, Error>,
 {
@@ -571,7 +587,7 @@ fn typ_recv_type(input: &mut Input) -> Result<Type> {
     .parse_next(input)
 }
 
-fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<Name>)>> {
+fn type_params(input: &mut Input) -> Result<Option<(Span, Vec<LocalName>)>> {
     // TODO should be able to use `<` to improve error message
     opt((t(TokenKind::Lt), list(local_name), t(TokenKind::Gt)))
         .map(|opt| opt.map(|(open, names, close)| (open.span.join(close.span), names)))
@@ -1504,7 +1520,7 @@ fn cmd_branch_recv_type(input: &mut Input) -> Result<CommandBranch> {
     .parse_next(input)
 }
 
-fn loop_label(input: &mut Input) -> Result<Option<Name>> {
+fn loop_label(input: &mut Input) -> Result<Option<LocalName>> {
     opt(preceded(t(TokenKind::Slash), local_name)).parse_next(input)
 }
 

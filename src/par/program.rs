@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use crate::location::{Span, Spanning};
+use crate::location::Span;
 
 use super::{
-    language::Name,
+    language::{GlobalName, LocalName},
     process,
     types::{Context, Type, TypeDefs, TypeError},
 };
@@ -20,29 +20,29 @@ pub struct Program<Expr> {
 #[derive(Debug, Clone)]
 pub struct CheckedProgram {
     pub type_defs: TypeDefs,
-    pub declarations: IndexMap<Name, Declaration>,
-    pub definitions: IndexMap<Name, Definition<Arc<process::Expression<Type>>>>,
+    pub declarations: IndexMap<GlobalName, Declaration>,
+    pub definitions: IndexMap<GlobalName, Definition<Arc<process::Expression<Type>>>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TypeDef {
     pub span: Span,
-    pub name: Name,
-    pub params: Vec<Name>,
+    pub name: GlobalName,
+    pub params: Vec<LocalName>,
     pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
 pub struct Declaration {
     pub span: Span,
-    pub name: Name,
+    pub name: GlobalName,
     pub typ: Type,
 }
 
 #[derive(Clone, Debug)]
 pub struct Definition<Expr> {
     pub span: Span,
-    pub name: Name,
+    pub name: GlobalName,
     pub expression: Expr,
 }
 
@@ -133,7 +133,7 @@ impl<Expr> Default for Program<Expr> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType(pub Name, pub Type);
+pub struct NameWithType(pub String, pub Type);
 
 pub struct TypeOnHover {
     sorted_pairs: Vec<(Span, NameWithType)>,
@@ -144,9 +144,9 @@ impl TypeOnHover {
         let mut pairs = Vec::new();
 
         for (_, definition) in &program.definitions {
-            definition.expression.types_at_spans(&mut |name, typ| {
-                pairs.push((name.span(), NameWithType(name, typ)))
-            });
+            definition
+                .expression
+                .types_at_spans(&mut |span, name, typ| pairs.push((span, NameWithType(name, typ))));
         }
 
         pairs.sort_by_key(|(span, _)| span.start.offset);

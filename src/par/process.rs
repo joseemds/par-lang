@@ -1,5 +1,9 @@
-use super::{language::Name, primitive::Primitive, types::Type};
-use crate::location::Span;
+use super::{
+    language::{GlobalName, LocalName},
+    primitive::Primitive,
+    types::Type,
+};
+use crate::location::{Span, Spanning};
 use indexmap::IndexMap;
 use std::{
     fmt::{self, Write},
@@ -10,7 +14,7 @@ use std::{
 pub enum Process<Typ> {
     Let {
         span: Span,
-        name: Name,
+        name: LocalName,
         annotation: Option<Type>,
         typ: Typ,
         value: Arc<Expression<Typ>>,
@@ -18,7 +22,7 @@ pub enum Process<Typ> {
     },
     Do {
         span: Span,
-        name: Name,
+        name: LocalName,
         typ: Typ,
         command: Command<Typ>,
     },
@@ -29,30 +33,30 @@ pub enum Process<Typ> {
 pub enum Command<Typ> {
     Link(Arc<Expression<Typ>>),
     Send(Arc<Expression<Typ>>, Arc<Process<Typ>>),
-    Receive(Name, Option<Type>, Typ, Arc<Process<Typ>>),
-    Signal(Name, Arc<Process<Typ>>),
-    Case(Arc<[Name]>, Box<[Arc<Process<Typ>>]>),
+    Receive(LocalName, Option<Type>, Typ, Arc<Process<Typ>>),
+    Signal(LocalName, Arc<Process<Typ>>),
+    Case(Arc<[LocalName]>, Box<[Arc<Process<Typ>>]>),
     Break,
     Continue(Arc<Process<Typ>>),
     Begin {
         unfounded: bool,
-        label: Option<Name>,
+        label: Option<LocalName>,
         captures: Captures,
         body: Arc<Process<Typ>>,
     },
-    Loop(Option<Name>, Captures),
+    Loop(Option<LocalName>, Captures),
     SendType(Type, Arc<Process<Typ>>),
-    ReceiveType(Name, Arc<Process<Typ>>),
+    ReceiveType(LocalName, Arc<Process<Typ>>),
 }
 
 #[derive(Clone, Debug)]
 pub enum Expression<Typ> {
-    Global(Span, Name, Typ),
-    Variable(Span, Name, Typ),
+    Global(Span, GlobalName, Typ),
+    Variable(Span, LocalName, Typ),
     Fork {
         span: Span,
         captures: Captures,
-        chan_name: Name,
+        chan_name: LocalName,
         chan_annotation: Option<Type>,
         chan_type: Typ,
         expr_type: Typ,
@@ -63,7 +67,7 @@ pub enum Expression<Typ> {
 
 #[derive(Clone, Debug)]
 pub struct Captures {
-    pub names: IndexMap<Name, Span>,
+    pub names: IndexMap<LocalName, Span>,
 }
 
 impl Default for Captures {
@@ -81,7 +85,7 @@ impl Captures {
         }
     }
 
-    pub fn single(name: Name, loc: Span) -> Self {
+    pub fn single(name: LocalName, loc: Span) -> Self {
         let mut caps = Self::new();
         caps.add(name, loc);
         caps
@@ -93,11 +97,11 @@ impl Captures {
         }
     }
 
-    pub fn add(&mut self, name: Name, loc: Span) {
+    pub fn add(&mut self, name: LocalName, loc: Span) {
         self.names.insert(name, loc);
     }
 
-    pub fn remove(&mut self, name: &Name) -> Option<Span> {
+    pub fn remove(&mut self, name: &LocalName) -> Option<Span> {
         self.names.shift_remove(name)
     }
 }
@@ -105,7 +109,7 @@ impl Captures {
 impl<Typ: Clone> Process<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<Name>, Captures>,
+        loop_points: &IndexMap<Option<LocalName>, Captures>,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Let {
@@ -243,7 +247,7 @@ impl<Typ: Clone> Process<Typ> {
 }
 
 impl<Typ: Clone> Process<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
+    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
         match self {
             Process::Let {
                 name,
@@ -253,13 +257,13 @@ impl<Typ: Clone> Process<Typ> {
                 ..
             } => {
                 value.types_at_spans(consume);
-                consume(name.clone(), typ.clone());
+                consume(name.span(), format!("{}", name), typ.clone());
                 then.types_at_spans(consume);
             }
             Process::Do {
                 name, typ, command, ..
             } => {
-                consume(name.clone(), typ.clone());
+                consume(name.span(), format!("{}", name), typ.clone());
                 command.types_at_spans(consume);
             }
             Process::Telltypes(_, process) => {
@@ -270,7 +274,10 @@ impl<Typ: Clone> Process<Typ> {
 }
 
 impl<Typ: Clone> Command<Typ> {
-    pub fn fix_captures(&self, loop_points: &IndexMap<Option<Name>, Captures>) -> (Self, Captures) {
+    pub fn fix_captures(
+        &self,
+        loop_points: &IndexMap<Option<LocalName>, Captures>,
+    ) -> (Self, Captures) {
         match self {
             Self::Link(expression) => {
                 let (expression, caps) = expression.fix_captures(loop_points);
@@ -349,7 +356,7 @@ impl<Typ: Clone> Command<Typ> {
 }
 
 impl<Typ: Clone> Command<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
+    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
         match self {
             Self::Link(expression) => {
                 expression.types_at_spans(consume);
@@ -359,7 +366,7 @@ impl<Typ: Clone> Command<Typ> {
                 process.types_at_spans(consume);
             }
             Self::Receive(param, _, param_type, process) => {
-                consume(param.clone(), param_type.clone());
+                consume(param.span(), format!("{}", param), param_type.clone());
                 process.types_at_spans(consume);
             }
             Self::Signal(_, process) => {
@@ -391,7 +398,7 @@ impl<Typ: Clone> Command<Typ> {
 impl<Typ: Clone> Expression<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<Name>, Captures>,
+        loop_points: &IndexMap<Option<LocalName>, Captures>,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Global(loc, name, typ) => (
@@ -466,10 +473,13 @@ impl<Typ: Clone> Expression<Typ> {
 }
 
 impl<Typ: Clone> Expression<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Name, Typ)) {
+    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
         match self {
-            Self::Global(_, name, typ) | Self::Variable(_, name, typ) => {
-                consume(name.clone(), typ.clone());
+            Self::Global(_, name, typ) => {
+                consume(name.span(), format!("{}", name), typ.clone());
+            }
+            Self::Variable(_, name, typ) => {
+                consume(name.span(), format!("{}", name), typ.clone());
             }
             Self::Fork {
                 chan_name,
@@ -477,7 +487,11 @@ impl<Typ: Clone> Expression<Typ> {
                 process,
                 ..
             } => {
-                consume(chan_name.clone(), chan_type.clone());
+                consume(
+                    chan_name.span(),
+                    format!("{}", chan_name),
+                    chan_type.clone(),
+                );
                 process.types_at_spans(consume);
             }
             Self::Primitive(_, _, _) => {}
