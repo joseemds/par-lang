@@ -3,114 +3,114 @@ type Nat = recursive either {
   .succ self
 }
 
-dec zero: Nat
-def zero = .zero!
-dec one: Nat
-def one = .succ .zero !
-dec two: Nat
-def two = .succ .succ .zero !
+dec Zero : Nat
+def Zero = .zero!
+dec One : Nat
+def One = .succ .zero !
+dec Two : Nat
+def Two = .succ .succ .zero !
 
-dec nat_add: [Nat] [Nat] Nat
-def nat_add = [n] [m] n.begin.case {
+dec NatAdd: [Nat] [Nat] Nat
+def NatAdd = [n] [m] n.begin.case {
   .zero! => m,
   .succ n => .succ n.loop
 }
 
-def three = :nat_add(:one)(:two)
+def Three = NatAdd(One)(Two)
 
-dec nat_era: [Nat] !
-def nat_era = [n] n.begin.case {
+dec NatEra: [Nat] !
+def NatEra = [n] n.begin.case {
   .zero! => !
   .succ n => n.loop
 }
 
-dec nat_dup: [Nat] (Nat) Nat
-def nat_dup = [n] n.begin.case {
+dec NatDup: [Nat] (Nat) Nat
+def NatDup = [n] n.begin.case {
   .zero! => (.zero!) .zero!
   .succ n => let (a)b = n.loop in
     (.succ a) .succ b
 }
 
-dec nat_mul: [Nat] [Nat] Nat
-def nat_mul = [n] [m] n.begin.case {
-  .zero! => let ! = :nat_era(m) in :zero,
-  .succ n => let (m2)m = :nat_dup(m) in
-    :nat_add(m2)(n.loop)
+dec NatMul: [Nat] [Nat] Nat
+def NatMul = [n] [m] n.begin.case {
+  .zero! => let ! = NatEra(m) in Zero,
+  .succ n => let (m2)m = NatDup(m) in
+    NatAdd(m2)(n.loop)
 }
 
-type Stream<T> = iterative choice {
+type Stream<a> = iterative choice {
   .end => !
-  .next => (T) self
+  .next => (a) self
 }
 
-dec nats: Stream<Nat>
-def nats = let m = :zero in
+dec Nats: Stream<Nat>
+def Nats = let m = Zero in
   begin case {
-    .end => :nat_era(m),
+    .end => NatEra(m),
     .next => {
-      let (m2)m = :nat_dup(m) in
+      let (m2)m = NatDup(m) in
       let m: Nat = .succ m in
       (m2) loop
     }
   }
 
-type Dup<T> = iterative choice {
+type Dup<a> = iterative choice {
   .end => !
   .new => (self) self
-  .dup(T) => (T) (T) self
+  .dup(a) => (a) (a) self
 }
-type Era<T> = iterative choice {
+type Era<a> = iterative choice {
   .end => !
   .new => (self) self
-  .era(T) => self
+  .era(a) => self
 }
 
-dec instDupNat: Dup<Nat>
-def instDupNat = begin case {
+dec InstDupNat: Dup<Nat>
+def InstDupNat = begin case {
   .end => !
   .new => (loop) loop
-  .dup(n) => let (n2)n = :nat_dup(n) in (n2)(n) loop
+  .dup(n) => let (n2)n = NatDup(n) in (n2)(n) loop
 }
-dec instEraNat: Era<Nat>
-def instEraNat = begin case {
+dec InstEraNat: Era<Nat>
+def InstEraNat = begin case {
   .end => !
   .new => (loop) loop
-  .era(n) => let ! = :nat_era(n) in loop
+  .era(n) => let ! = NatEra(n) in loop
 }
 
-type Add<T> = iterative choice {
+type Add<a> = iterative choice {
   .end => !
   .new => (self) self
-  .add(T)(T) => (T) self
+  .add(a)(a) => (a) self
 }
 
-dec instAddNat: Add<Nat>
-def instAddNat = begin case {
+dec InstAddNat: Add<Nat>
+def InstAddNat = begin case {
   .end => !
   .new => (loop) loop
-  .add(n)(m) => (:nat_add(n)(m)) loop
+  .add(n)(m) => (NatAdd(n)(m)) loop
 }
 
-type Mul<T> = iterative choice {
+type Mul<a> = iterative choice {
   .end => !
   .new => (self) self
-  .mul(T)(T) => (T) self
+  .mul(a)(a) => (a) self
 }
 
-dec instMulNat: Mul<Nat>
-def instMulNat = begin case {
+dec InstMulNat: Mul<Nat>
+def InstMulNat = begin case {
   .end => !
   .new => (loop) loop
-  .mul(n)(m) => (:nat_mul(n)(m)) loop
+  .mul(n)(m) => (NatMul(n)(m)) loop
 }
 
-type Option<T> = either {
+type Option<a> = either {
   .none!
-  .some T
+  .some a
 }
 
-dec instEraOption: [type T] [Era<T>] Era<Option<T>>
-def instEraOption = [type T] [instEra] begin case {
+dec IntEraOption : [type a] [Era<a>] Era<Option<a>>
+def IntEraOption = [type a] [instEra] begin case {
   .end => do {instEra.end?} in !
   .new => do {instEra.new[instEra2]} in (loop) let instEra = instEra2 in loop
   .era(option) => option.case {
@@ -119,16 +119,16 @@ def instEraOption = [type T] [instEra] begin case {
   }
 }
 
-type Stack<T> = recursive either {
+type Stack<a> = recursive either {
   .empty!
-  .item (T) self
+  .item (a) self
 }
 
-dec stack_new: [type T] Stack<T>
-def stack_new = [type T] .empty!
+dec StackNew : [type a] Stack<a>
+def StackNew = [type a] .empty!
 
-dec instEraStack: [type T] [Era<T>] Era<Stack<T>>
-def instEraStack = [type T] [instEra] begin/out case {
+dec InstEraStack : [type a] [Era<a>] Era<Stack<a>>
+def InstEraStack = [type a] [instEra] begin/out case {
   .end => do {instEra.end?} in !
   .new => do {instEra.new[inst]} in (loop/out) let instEra = inst in loop/out
   .era => [s] s.begin/inner.case {
@@ -137,33 +137,33 @@ def instEraStack = [type T] [instEra] begin/out case {
   }
 }
 
-dec stack_pop: [type T] [Stack<T>] (Option<T>) Stack<T>
-def stack_pop = [type T] [s] s.case {
+dec StackPop : [type a] [Stack<a>] (Option<a>) Stack<a>
+def StackPop = [type a] [s] s.case {
   .item(t) s => (.some t) s,
   .empty! => (.none!) .empty!
 }
 
-dec stack_push: [type T] [Stack<T>] [T] Stack<T>
-def stack_push = [type T] [s] [t] .item (t) s
+dec StackPush : [type a] [Stack<a>] [a] Stack<a>
+def StackPush = [type a] [s] [t] .item (t) s
 
-dec stack_reverse: [type T] [Stack<T>] Stack<T>
-def stack_reverse = [type T] [s] let snew: Stack<T> = .empty! in s.begin.case {
+dec StackReverse : [type a] [Stack<a>] Stack<a>
+def StackReverse = [type a] [s] let snew: Stack<a> = .empty! in s.begin.case {
   .empty! => snew,
-  .item(t) s => let snew = :stack_push(type T)(snew)(t) in s.loop
+  .item(t) s => let snew = StackPush(type a)(snew)(t) in s.loop
 }
 
 // def test_Stack_reverse = Stack_reverse(type Nat)(.item(one) .item(two) .item(three) .empty!)
 
-type Queue<T> =
-  (Stack<T>)
-  Stack<T>
+type Queue<a> =
+  (Stack<a>)
+  Stack<a>
 
-dec queue_new : [type T] Queue<T>
-def queue_new = [type T] (:stack_new(type T)) :stack_new(type T)
+dec QueueNew : [type a] Queue<a>
+def QueueNew = [type a] (StackNew(type a)) StackNew(type a)
 
-dec instEraQueue: [type T] [Era<T>] Era<Queue<T>>
-def instEraQueue = [type T] [instEra]
-  let instEraStack = :instEraStack(type T)(instEra) in
+dec InstEraQueue: [type a] [Era<a>] Era<Queue<a>>
+def InstEraQueue = [type a] [instEra]
+  let instEraStack = InstEraStack(type a)(instEra) in
   begin case {
     .end => do {instEraStack.end?} in !
     .new => do {instEraStack.new[inst]} in (loop) let instEraStack = inst in loop
@@ -172,15 +172,15 @@ def instEraQueue = [type T] [instEra]
     } in loop
   }
 
-dec queue_push: [type T] [Queue<T>] [T] Queue<T>
-def queue_push = [type T] [(l) r] [t]
-  let l = :stack_push(type T)(l)(t) in
+dec QueuePush : [type a] [Queue<a>] [a] Queue<a>
+def QueuePush = [type a] [(l) r] [t]
+  let l = StackPush(type a)(l)(t) in
   (l)r
 
-dec queue_pop: [type T] [Queue<T>] (Option<T>) Queue<T>
-def queue_pop = [type T] [(l) r] r.case {
+dec QueuePop : [type a] [Queue<a>] (Option<a>) Queue<a>
+def QueuePop = [type a] [(l) r] r.case {
   .item(t) r => (.some t) (l)r,
-  .empty! => let r = :stack_reverse(type T)(l) in let l: Stack<T> = .empty! in r.case {
+  .empty! => let r = StackReverse(type a)(l) in let l: Stack<a> = .empty! in r.case {
     .empty! => (.none!) (l) .empty!
     .item(t) r => (.some t) (l) r
   }
@@ -191,134 +191,134 @@ def queue_pop = [type T] [(l) r] r.case {
 // A semigroup has an associative operation called `mul`.
 // Par doesn't (currently?) have proofs so this is equivalent to `Mul`.
 // See <https://leanprover-community.github.io/mathlib4_docs/Mathlib/Algebra/Group/Defs.html#Semigroup>
-type Semigroup<T> = iterative choice {
+type Semigroup<a> = iterative choice {
   .end => !
   .new => (self) self
-  .mul(T)(T) => (T) self // since instances are explicitly named conflict with Mul.mul with subtyping is fine (actually makes Mul the same as Semigroup)
+  .mul(a)(a) => (a) self // since instances are explicitly named conflict with Mul.mul with subtyping is fine (actually makes Mul the same as Semigroup)
 }
 
 // Stack which keeps track of cumulative semigroup value
 // Order is (item) cumulative_measure
-type SemigroupStack<T> = Stack<(T) T>
+type SemigroupStack<a> = Stack<(a) a>
 
-dec semigroupStack_new: [type T] SemigroupStack<T>
-def semigroupStack_new = [type T] :stack_new(type (T) T)
+dec SemigroupStackNew : [type a] SemigroupStack<a>
+def SemigroupStackNew = [type a] StackNew(type (a) a)
 
-dec instEraPair: [type T] [Era<T>] Era<(T) T>
-def instEraPair = [type T] [instEra] begin case {
+dec InstEraPair : [type a] [Era<a>] Era<(a) a>
+def InstEraPair = [type a] [instEra] begin case {
     .end => do {instEra.end?} in !
     .new => do {instEra.new[inst]} in (loop) let instEra = inst in loop
-    .era((t1: T) t2: T) => do {instEra.era(t1).era(t2)} in loop
+    .era((t1: a) t2: a) => do {instEra.era(t1).era(t2)} in loop
   }
 
-dec instDupPair: [type T] [Dup<T>] Dup<(T) T>
-def instDupPair = [type T] [instDup] begin case {
+dec InstDupPair : [type a] [Dup<a>] Dup<(a) a>
+def InstDupPair = [type a] [instDup] begin case {
     .end => do {instDup.end?} in !
     .new => do {instDup.new[inst]} in (loop) let instDup = inst in loop
-    .dup((t1: T) t2: T) => do {instDup.dup(t1)[t1][t12].dup(t2)[t2][t22]}
+    .dup((t1: a) t2: a) => do {instDup.dup(t1)[t1][t12].dup(t2)[t2][t22]}
       in ((t1) t2) ((t12) t22) loop
   }
 
-dec instEraSemigroupStack: [type T] [Era<T>] Era<SemigroupStack<T>>
-def instEraSemigroupStack = [type T] [instEra]
-  let instEraPair = :instEraPair(type T)(instEra) in
-  let instEraStack = :instEraStack(type (T) T)(instEraPair) in
+dec InstEraSemigroupStack : [type a] [Era<a>] Era<SemigroupStack<a>>
+def InstEraSemigroupStack = [type a] [instEra]
+  let instEraPair = InstEraPair(type a)(instEra) in
+  let instEraStack = InstEraStack(type (a) a)(instEraPair) in
   begin case {
     .end => do {instEraStack.end?} in !
     .new => do {instEraStack.new[inst]} in (loop) let instEraStack = inst in loop
     .era(t) => do {instEraStack.era(t)} in loop
   }
 
-dec semigroupStack_pop: [type T] [SemigroupStack<T>] (Option<(T) T>) SemigroupStack<T>
-def semigroupStack_pop = [type T] [s] :stack_pop(type (T) T)(s)
+dec SemigroupStackPop : [type a] [SemigroupStack<a>] (Option<(a) a>) SemigroupStack<a>
+def SemigroupStackPop = [type a] [s] StackPop(type (a) a)(s)
 
-dec semigroupStack_push: [type T] [Dup<T>] [Semigroup<T>] [SemigroupStack<T>] [T] SemigroupStack<T>
-def semigroupStack_push = [type T] [instDup] [instSemigroup] [s] [t]
+dec SemigroupStackPush : [type a] [Dup<a>] [Semigroup<a>] [SemigroupStack<a>] [a] SemigroupStack<a>
+def SemigroupStackPush = [type a] [instDup] [instSemigroup] [s] [t]
   do {instDup.dup(t)[t][t2]} in
-  let (p)s = :semigroupStack_pop(type T)(s) in p.case { // Peek
-    .none! => do {instSemigroup.end? instDup.end?} in :stack_push(type (T) T)(s)((t) t2),
+  let (p)s = SemigroupStackPop(type a)(s) in p.case { // Peek
+    .none! => do {instSemigroup.end? instDup.end?} in StackPush(type (a) a)(s)((t) t2),
     .some(p) pm =>
       do {instDup.dup(pm)[pm][pm2]} in
-      let s = :stack_push(type (T) T)(s)((p) pm) in // return peeked element back into the stack
+      let s = StackPush(type (a) a)(s)((p) pm) in // return peeked element back into the stack
       do {instSemigroup.mul(pm2)(t2)[tm]} in
       do {instSemigroup.end? instDup.end?} in
-      :stack_push(type (T) T)(s)((t) tm)
+      StackPush(type (a) a)(s)((t) tm)
   }
 
-dec semigroupStack_peek: [type T] [Era<T>] [Dup<T>] [Semigroup<T>] [SemigroupStack<T>] (Option<(T) T>) SemigroupStack<T>
-def semigroupStack_peek = [type T] [instEra] [instDup] [instSemigroup] [s]
+dec SemigroupStackPeek : [type a] [Era<a>] [Dup<a>] [Semigroup<a>] [SemigroupStack<a>] (Option<(a) a>) SemigroupStack<a>
+def SemigroupStackPeek = [type a] [instEra] [instDup] [instSemigroup] [s]
   do {instDup.new[inst]} in
-  let instDupPair = :instDupPair(type T)(inst) in
-  let (t)s = :semigroupStack_pop(type T)(s) in t.case {
+  let instDupPair = InstDupPair(type a)(inst) in
+  let (t)s = SemigroupStackPop(type a)(s) in t.case {
   .none! => do {instEra.end? instSemigroup.end? instDupPair.end? instDup.end?}
     in (.none !) s,
   .some t =>
     do {instDupPair.dup(t)[t][t2]} in
-    let s: SemigroupStack<T> = .item (t) s in
+    let s: SemigroupStack<a> = .item (t) s in
     do {instEra.end? instSemigroup.end? instDupPair.end? instDup.end?} in
     (.some t2) s
 }
 
 
-dec semigroupStack_reverse: [type T] [Era<T>] [Dup<T>] [Semigroup<T>] [SemigroupStack<T>] SemigroupStack<T>
-def semigroupStack_reverse = [type T] [instEra] [instDup] [instSemigroup] [s] let snew: SemigroupStack<T> = :semigroupStack_new(type T) in s.begin.case {
+dec SemigroupStackReverse : [type a] [Era<a>] [Dup<a>] [Semigroup<a>] [SemigroupStack<a>] SemigroupStack<a>
+def SemigroupStackReverse = [type a] [instEra] [instDup] [instSemigroup] [s] let snew: SemigroupStack<a> = SemigroupStackNew(type a) in s.begin.case {
   .empty! => do {instSemigroup.end? instDup.end? instEra.end?} in snew,
   .item((t) m) s => do {
     instEra.era(m)
     instDup.new[instDup2]
     instSemigroup.new[instSemigroup2]
     } in
-    let snew = :semigroupStack_push(type T)(instDup2)(instSemigroup2)(snew)(t)
+    let snew = SemigroupStackPush(type a)(instDup2)(instSemigroup2)(snew)(t)
     in s.loop
 }
 
 // See <https://byorgey.github.io/blog/posts/2024/11/27/stacks-queues.html>
 // This is slightly more general because `T` doesn't need an identity element.
-type SemigroupQueue<T> = Queue<(T) T>
+type SemigroupQueue<a> = Queue<(a) a>
 
-dec semigroupQueue_new: [type T] SemigroupQueue<T>
-def semigroupQueue_new = [type T] :queue_new(type (T) T)
+dec SemigroupQueueNew : [type a] SemigroupQueue<a>
+def SemigroupQueueNew = [type a] QueueNew(type (a) a)
 
-dec instEraSemigroupQueue: [type T] [Era<T>] Era<SemigroupQueue<T>>
-def instEraSemigroupQueue = [type T] [instEra]
-  let instEraPair = :instEraPair(type T)(instEra) in
-  let instEraQueue = :instEraQueue(type (T) T)(instEraPair) in
+dec InstEraSemigroupQueue : [type a] [Era<a>] Era<SemigroupQueue<a>>
+def InstEraSemigroupQueue = [type a] [instEra]
+  let instEraPair = InstEraPair(type a)(instEra) in
+  let instEraQueue = InstEraQueue(type (a) a)(instEraPair) in
   begin case {
     .end => do {instEraQueue.end?} in !
     .new => do {instEraQueue.new[inst]} in (loop) let instEraQueue = inst in loop
     .era(q) => do {instEraQueue.era(q)}  in loop
   }
 
-dec semigroupQueue_push: [type T] [Dup<T>] [Semigroup<T>] [SemigroupQueue<T>] [T] SemigroupQueue<T>
-def semigroupQueue_push = [type T] [instDup] [instSemigroup] [(l) r] [t]
-  let l = :semigroupStack_push(type T)(instDup)(instSemigroup)(l)(t) in
+dec SemigroupQueuePush : [type a] [Dup<a>] [Semigroup<a>] [SemigroupQueue<a>] [a] SemigroupQueue<a>
+def SemigroupQueuePush = [type a] [instDup] [instSemigroup] [(l) r] [t]
+  let l = SemigroupStackPush(type a)(instDup)(instSemigroup)(l)(t) in
   (l)r
 
-dec semigroupQueue_pop: [type T] [Era<T>] [Dup<T>] [Semigroup<T>] [SemigroupQueue<T>] (Option<(T) T>) SemigroupQueue<T>
-def semigroupQueue_pop = [type T] [instEra] [instDup] [instSemigroup] [(l) r]
-  let (t)r = :semigroupStack_pop(type T)(r) in t.case {
+dec SemigroupQueuePop : [type a] [Era<a>] [Dup<a>] [Semigroup<a>] [SemigroupQueue<a>] (Option<(a) a>) SemigroupQueue<a>
+def SemigroupQueuePop = [type a] [instEra] [instDup] [instSemigroup] [(l) r]
+  let (t)r = SemigroupStackPop(type a)(r) in t.case {
     .some t => do {instEra.end? instDup.end? instSemigroup.end?} in (.some t) (l)r,
     .none! => do {instEra.new[inst]} in
-      let ! = :instEraSemigroupStack(type T)(inst).era(r).end in
+      let ! = InstEraSemigroupStack(type a)(inst).era(r).end in
       do {instEra.new[inst]} in
-      let r = :semigroupStack_reverse(type T)(inst)(instDup)(instSemigroup)(l) in
-      let l = :semigroupStack_new(type T) in
-      let (t)r = :semigroupStack_pop(type T)(r) in t.case {
-        .none! =>  let ! = :instEraSemigroupStack(type T)(instEra).era(r).end in
+      let r = SemigroupStackReverse(type a)(inst)(instDup)(instSemigroup)(l) in
+      let l = SemigroupStackNew(type a) in
+      let (t)r = SemigroupStackPop(type a)(r) in t.case {
+        .none! =>  let ! = InstEraSemigroupStack(type a)(instEra).era(r).end in
           (.none!) (l) .empty!
         .some t => do {instEra.end?} in (.some t) (l) r
   }
 }
 
-dec semigroupQueue_peek: [type T] [Era<T>] [Dup<T>] [Semigroup<T>] [SemigroupQueue<T>] (Option<(T) T>) SemigroupQueue<T>
-def semigroupQueue_peek = [type T] [instEra] [instDup] [instSemigroup] [(l)r]
+dec SemigroupQueuePeek: [type a] [Era<a>] [Dup<a>] [Semigroup<a>] [SemigroupQueue<a>] (Option<(a) a>) SemigroupQueue<a>
+def SemigroupQueuePeek = [type a] [instEra] [instDup] [instSemigroup] [(l)r]
   do {
     instEra.new[instEra2].new[instEra3]
     instDup.new[instDup2].new[instDup3]
     instSemigroup.new[instSemigroup2].new[instSemigroup3]
   } in
-  let (tl)l = :semigroupStack_peek(type T)(instEra2)(instDup2)(instSemigroup2)(l) in
-  let (tr)r = :semigroupStack_peek(type T)(instEra3)(instDup3)(instSemigroup3)(r) in
+  let (tl)l = SemigroupStackPeek(type a)(instEra2)(instDup2)(instSemigroup2)(l) in
+  let (tr)r = SemigroupStackPeek(type a)(instEra3)(instDup3)(instSemigroup3)(r) in
 
   // Use larger of the two measures if both stacks have elements.
   // If only 1 stack make sure it is the right stack, and use that measure.
@@ -341,9 +341,9 @@ def semigroupQueue_peek = [type T] [instEra] [instDup] [instSemigroup] [(l)r]
           instDup.new[instDup2]
           instSemigroup.new[instSemigroup2]
         } in
-        let ! = :instEraSemigroupStack(type T)(instEra2).era(r).end in
-        let r = :semigroupStack_reverse(type T)(instEra3)(instDup2)(instSemigroup2)(l) in
-        let l = :semigroupStack_new(type T) in
+        let ! = InstEraSemigroupStack(type a)(instEra2).era(r).end in
+        let r = SemigroupStackReverse(type a)(instEra3)(instDup2)(instSemigroup2)(l) in
+        let l = SemigroupStackNew(type a) in
         // Repeat now that the left stack is empty and the right is not.
 {
 do {
@@ -351,8 +351,8 @@ do {
     instDup.new[instDup2].new[instDup3]
     instSemigroup.new[instSemigroup2].new[instSemigroup3]
   } in
-  let (tl)l = :semigroupStack_peek(type T)(instEra2)(instDup2)(instSemigroup2)(l) in
-  let (tr)r = :semigroupStack_peek(type T)(instEra3)(instDup3)(instSemigroup3)(r) in
+  let (tl)l = SemigroupStackPeek(type a)(instEra2)(instDup2)(instSemigroup2)(l) in
+  let (tr)r = SemigroupStackPeek(type a)(instEra3)(instDup3)(instSemigroup3)(r) in
 
   // Use larger of the two measures if both stacks have elements.
   // If only 1 stack make sure it is the right stack, and use that measure.
@@ -394,8 +394,8 @@ do {
     }
   }
 
-dec nat_max: [Nat] [Nat] Nat
-def nat_max = [n] [m] n.begin.case {
+dec NatMax : [Nat] [Nat] Nat
+def NatMax = [n] [m] n.begin.case {
   .zero! => m,
   .succ n => m.case {
     .zero! => .succ n,
@@ -403,34 +403,34 @@ def nat_max = [n] [m] n.begin.case {
   }
 }
 
-dec nat_min: [Nat] [Nat] Nat
-def nat_min = [n] [m] n.begin.case {
-  .zero! => let ! = :instEraNat.era(m).end in .zero!
+dec NatMin: [Nat] [Nat] Nat
+def NatMin = [n] [m] n.begin.case {
+  .zero! => let ! = InstEraNat.era(m).end in .zero!
   .succ n => m.case {
-    .zero! => let ! = :instEraNat.era(n).end in .zero!
+    .zero! => let ! = InstEraNat.era(n).end in .zero!
     .succ m => .succ n.loop
   }
 }
 
-dec instSemigroupNatMax: Semigroup<Nat>
-def instSemigroupNatMax = begin case {
+dec InstSemigroupNatMax: Semigroup<Nat>
+def InstSemigroupNatMax = begin case {
   .end => !
   .new => (loop) loop
-  .mul (n) (m) => (:nat_max(n)(m)) loop
+  .mul (n) (m) => (NatMax(n)(m)) loop
 }
 
-dec instSemigroupNatMin: Semigroup<Nat>
-def instSemigroupNatMin = begin case {
+dec InstSemigroupNatMin: Semigroup<Nat>
+def InstSemigroupNatMin = begin case {
   .end => !
   .new => (loop) loop
-  .mul (n) (m) => (:nat_min(n)(m)) loop
+  .mul (n) (m) => (NatMin(n)(m)) loop
 }
 
-dec instSemigroupNatAdd: Semigroup<Nat>
-def instSemigroupNatAdd = begin case {
+dec InstSemigroupNatAdd: Semigroup<Nat>
+def InstSemigroupNatAdd = begin case {
   .end => !
   .new => (loop) loop
-  .mul (n) (m) => (:nat_add(n)(m)) loop
+  .mul (n) (m) => (NatAdd(n)(m)) loop
 }
 
 
@@ -473,44 +473,44 @@ def instSemigroupNatAdd = begin case {
 //   SemigroupStack_reverse(type Nat)(instEraNat)(instDupNat)(instSemigroupNatMax)(s)
 
 // Output a stream of the running measure over a 3 element wide window of nats.
-dec semigroup_win3_nats: [Semigroup<Nat>] Stream<Nat>
-def semigroup_win3_nats = [instSemigroup]
-  let ns = :nats in
+dec SemigroupWin3Nats: [Semigroup<Nat>] Stream<Nat>
+def SemigroupWin3Nats = [instSemigroup]
+  let ns = Nats in
   do {ns.next[n1].next[n2].next[n3]} in
-  let q = :semigroupQueue_new(type Nat) in
+  let q = SemigroupQueueNew(type Nat) in
   do {instSemigroup.new[instSemigroup2].new[instSemigroup3].new[instSemigroup4]} in
-  let q = :semigroupQueue_push(type Nat)(:instDupNat)(instSemigroup2)(q)(n1) in
-  let q = :semigroupQueue_push(type Nat)(:instDupNat)(instSemigroup3)(q)(n2) in
-  let q = :semigroupQueue_push(type Nat)(:instDupNat)(instSemigroup4)(q)(n3) in
+  let q = SemigroupQueuePush(type Nat)(InstDupNat)(instSemigroup2)(q)(n1) in
+  let q = SemigroupQueuePush(type Nat)(InstDupNat)(instSemigroup3)(q)(n2) in
+  let q = SemigroupQueuePush(type Nat)(InstDupNat)(instSemigroup4)(q)(n3) in
   begin case {
     .end => do {
       instSemigroup.end?
-      let ! = :instEraSemigroupQueue(type Nat)(:instEraNat).era(q).end
+      let ! = InstEraSemigroupQueue(type Nat)(InstEraNat).era(q).end
       ns.end?
     } in !
     .next =>
       do {instSemigroup.new[instSemigroup2]} in
-      let (t)q = :semigroupQueue_peek(type Nat)(:instEraNat)(:instDupNat)(instSemigroup2)(q) in
+      let (t)q = SemigroupQueuePeek(type Nat)(InstEraNat)(InstDupNat)(instSemigroup2)(q) in
       (t.case {
-        .none! => :zero, // unreachable
-        .some (t)tm => let ! = :instEraNat.era(t).end in tm
+        .none! => Zero, // unreachable
+        .some (t)tm => let ! = InstEraNat.era(t).end in tm
       })
       do {instSemigroup.new[instSemigroup2]} in
-      let (v)q = :semigroupQueue_pop(type Nat)(:instEraNat)(:instDupNat)(instSemigroup2)(q) in
+      let (v)q = SemigroupQueuePop(type Nat)(InstEraNat)(InstDupNat)(instSemigroup2)(q) in
       v.case {
         .none! => loop // unreachable
         .some (v)vm =>
           do {
-            let ! = :instEraNat.era(v).era(vm).end
+            let ! = InstEraNat.era(v).era(vm).end
             instSemigroup.new[instSemigroup2]
             ns.next[n]
           } in
-          let q = :semigroupQueue_push(type Nat)(:instDupNat)(instSemigroup2)(q)(n) in
+          let q = SemigroupQueuePush(type Nat)(InstDupNat)(instSemigroup2)(q)(n) in
           loop
       }
   }
 
-def test_max_semigroup_win3_nats = :semigroup_win3_nats(:instSemigroupNatMax)
-def test_min_semigroup_win3_nats = :semigroup_win3_nats(:instSemigroupNatMin)
-def test_add_semigroup_win3_nats = :semigroup_win3_nats(:instSemigroupNatAdd)
-def test_mul_semigroup_win3_nats = :semigroup_win3_nats(:instMulNat)
+def TestMaxSemigroupWin3Nats = SemigroupWin3Nats(InstSemigroupNatMax)
+def TestMinSemigroupWin3Nats = SemigroupWin3Nats(InstSemigroupNatMin)
+def TestAddSemigroupWin3Nats = SemigroupWin3Nats(InstSemigroupNatAdd)
+def TestMulSemigroupWin3Nats = SemigroupWin3Nats(InstMulNat)

@@ -3,29 +3,29 @@ type Nat = recursive either {
   .add1 self
 }
 
-dec zero : Nat
-dec add1 : [Nat] Nat
-dec add  : [Nat, Nat] Nat
+dec Zero : Nat
+dec Add1 : [Nat] Nat
+dec Add  : [Nat, Nat] Nat
 
-def zero = .zero!
-def add1 = [n] .add1 n
+def Zero = .zero!
+def Add1 = [n] .add1 n
 
-def add = [n1, n2] n1.begin.case {
+def Add = [n1, n2] n1.begin.case {
   .zero!   => n2,
-  .add1 n1 => :add1(n1.loop)
+  .add1 n1 => Add1(n1.loop)
 }
 
-type Seq<T> = iterative choice {
+type Seq<a> = iterative choice {
   .close => !
-  .next  => (T) self
+  .next  => (a) self
 }
 
-dec fibonacci : Seq<Nat>
-def fibonacci =
-  let (a) b = (:zero) :add1(:zero)
+dec Fibonacci : Seq<Nat>
+def Fibonacci =
+  let (a) b = (Zero) Add1(Zero)
   in begin case {
     .close => !
     .next =>
-      let (a) b = (b) :add(a, b)
+      let (a) b = (b) Add(a, b)
       in (a) loop
   }

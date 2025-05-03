@@ -3,19 +3,19 @@ type Bool = either {
   .false!
 }
 
-type List<T> = recursive either {
+type List<a> = recursive either {
   .empty!
-  .item(T) self
+  .item(a) self
 }
 
-type Tree<T> = recursive either {
+type Tree<a> = recursive either {
   .empty!
-  .node(self, T, self)!
+  .node(self, a, self)!
 }
 
-dec flatten : [type T] [Tree<T>] List<T>
-def flatten = [type T] [tree] chan yield {
-  let yield: chan List<T> = tree.begin.case {
+dec Flatten : [type a] [Tree<a>] List<a>
+def Flatten = [type a] [tree] chan yield {
+  let yield: chan List<a> = tree.begin.case {
     .empty! => yield,
 
     .node(left, value, right)! => do {
@@ -27,6 +27,6 @@ def flatten = [type T] [tree] chan yield {
   yield.empty!
 }
 
-def main = :flatten(type Bool)(
+def Main = Flatten(type Bool)(
   .node(.node(.empty!, .true!, .empty!)!, .false!, .empty!)!
 )

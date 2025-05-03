@@ -29,8 +29,8 @@ type Game = iterative choice {
   .play_round => (Outcome) self
 }
 
-dec start_game : [Player, Player] Game
-def start_game = [p1, p2] begin/game case {
+dec StartGame : [Player, Player] Game
+def StartGame = [p1, p2] begin/game case {
   .stop => do {
     p1.stop?
     p2.stop?
@@ -49,7 +49,7 @@ def start_game = [p1, p2] begin/game case {
     .add1 limit => do {
       p1.play_move[move1]
       p2.play_move[move2]
-    } in :calculate_round(move1, move2).case {
+    } in CalculateRound(move1, move2).case {
       .first! => do {
         p1.win
         p2.lose
@@ -65,8 +65,8 @@ def start_game = [p1, p2] begin/game case {
   }
 }
 
-dec calculate_round : [Move, Move] either { .first!, .second!, .draw! }
-def calculate_round = [move1, move2] move1.case {
+dec CalculateRound : [Move, Move] either { .first!, .second!, .draw! }
+def CalculateRound = [move1, move2] move1.case {
   .rock! => move2.case {
     .rock! => .draw!
     .paper! => .second!

@@ -1,14 +1,14 @@
 type Bool    = either { .true!, .false! }
 type Nat     = recursive either { .zero!, .add1 self }
-type List<T> = recursive either { .empty!, .item(T) self }
+type List<a> = recursive either { .empty!, .item(a) self }
 
-type Func<A, B> = iterative choice {
+type Func<a, b> = iterative choice {
   .drop => !
-  .apply(A) => (B) self
+  .apply(a) => (b) self
 }
 
-dec filter : [Func<Nat, Bool>, List<Nat>] List<Nat>
-def filter = [predicate, list] list.begin.case {
+dec Filter : [Func<Nat, Bool>, List<Nat>] List<Nat>
+def Filter = [predicate, list] list.begin.case {
   .empty! => do {
     predicate.drop?
   } in .empty!
@@ -21,16 +21,16 @@ def filter = [predicate, list] list.begin.case {
   }
 }
 
-dec not : [Bool] Bool
-def not = [b] b.case { .true! => .false!, .false! => .true! }
+dec Not : [Bool] Bool
+def Not = [b] b.case { .true! => .false!, .false! => .true! }
 
-dec is_even : Func<Nat, Bool>
-def is_even = begin case {
+dec IsEven : Func<Nat, Bool>
+def IsEven = begin case {
   .drop => !
   .apply(n) => (n.begin.case {
     .zero!  => .true!
-    .add1 n => :not(n.loop)
+    .add1 n => Not(n.loop)
   }) loop
 }
 
-def filter_even = :filter(:is_even)
+def FilterEven = Filter(IsEven)
