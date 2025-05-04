@@ -11,7 +11,7 @@ use futures::{
 use std::sync::{Arc, Mutex};
 
 enum Request {
-    Int(Box<dyn Send + FnOnce(i128)>),
+    Int(String, Box<dyn Send + FnOnce(i128)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
 
@@ -118,9 +118,25 @@ impl Element {
 
                     if let Some(request) = self.request.take() {
                         match request {
-                            Request::Int(callback) => {
-                                ui.label("<int request>");
-                                self.request = Some(Request::Int(callback));
+                            Request::Int(mut input, callback) => {
+                                let input_number = i128::from_str_radix(&input, 10).ok();
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(egui::TextEdit::singleline(&mut input).hint_text("Type an integer..."));
+                                        let button = ui.add_enabled(
+                                            input_number.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_number.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let number = input_number.unwrap();
+                                    self.history.push(Event::IntRequest(number));
+                                    callback(number);
+                                } else {
+                                    self.request = Some(Request::Int(input, callback));
+                                }
                             }
 
                             Request::Choice(signals, callback) => {
@@ -220,7 +236,7 @@ async fn handle_coroutine(
 
             TypedReadback::IntRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
-                lock.request = Some(Request::Int(callback));
+                lock.request = Some(Request::Int(String::new(), callback));
                 refresh();
                 break;
             }
