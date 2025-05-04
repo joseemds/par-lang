@@ -16,7 +16,7 @@ use crate::par::{
 use crate::{
     location::{Span, Spanning},
     par::{
-        program::{CheckedProgram, Definition},
+        program::{CheckedModule, Definition},
         types::TypeDefs,
     },
 };
@@ -530,12 +530,13 @@ impl Compiler {
                         tree: Tree::Primitive(PrimitiveComb::Int(*i)),
                         ty,
                     }),
-                    Primitive::IntAdd1 => Ok(TypedTree {
-                        tree: Tree::Primitive(PrimitiveComb::IntAdd1),
-                        ty,
-                    }),
                 }
             }
+
+            Expression::External(_, f, typ) => Ok(TypedTree {
+                tree: Tree::External(*f),
+                ty: typ.clone(),
+            }),
         }
     }
 
@@ -577,8 +578,7 @@ impl Compiler {
             // types get erased.
             Command::SendType(argument, process) => {
                 let subject = self.use_variable(&name, true)?.0;
-                let Type::ReceiveType(_, type_name, ret_type) =
-                    self.normalize_type(subject.ty.clone())
+                let Type::Forall(_, type_name, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for SendType: {:?}", subject.ty);
                 };
@@ -588,8 +588,7 @@ impl Compiler {
             }
             Command::ReceiveType(parameter, process) => {
                 let subject = self.use_variable(&name, true)?.0;
-                let Type::SendType(_, type_name, ret_type) =
-                    self.normalize_type(subject.ty.clone())
+                let Type::Exists(_, type_name, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for ReceiveType: {:?}", subject.ty);
                 };
@@ -611,7 +610,7 @@ impl Compiler {
                 // free = (name < expr >)
                 // < process >
                 let subject = self.use_variable(&name, true)?.0;
-                let Type::Receive(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
+                let Type::Function(_, _, ret_type) = self.normalize_type(subject.ty.clone()) else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };
                 let expr = self.compile_expression(expr)?;
@@ -627,7 +626,7 @@ impl Compiler {
                 // free = (name target)
                 // < process >
                 let subject = self.use_variable(&name, true)?.0;
-                let Type::Send(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
+                let Type::Pair(_, arg_type, ret_type) = self.normalize_type(subject.ty.clone())
                 else {
                     panic!("Unexpected type for Receive: {:?}", subject.ty);
                 };
@@ -777,7 +776,7 @@ impl Compiler {
     }
 }
 
-pub fn compile_file(program: &CheckedProgram) -> Result<IcCompiled> {
+pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
     let mut compiler = Compiler {
         net: Net::default(),
         context: Context {

@@ -11,14 +11,14 @@ use super::{
 };
 
 #[derive(Clone, Debug)]
-pub struct Program<Expr> {
+pub struct Module<Expr> {
     pub type_defs: Vec<TypeDef>,
     pub declarations: Vec<Declaration>,
     pub definitions: Vec<Definition<Expr>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckedProgram {
+pub struct CheckedModule {
     pub type_defs: TypeDefs,
     pub declarations: IndexMap<GlobalName, Declaration>,
     pub definitions: IndexMap<GlobalName, Definition<Arc<process::Expression<Type>>>>,
@@ -46,8 +46,42 @@ pub struct Definition<Expr> {
     pub expression: Expr,
 }
 
-impl Program<Arc<process::Expression<()>>> {
-    pub fn type_check(&self) -> Result<CheckedProgram, TypeError> {
+impl Module<Arc<process::Expression<()>>> {
+    pub fn import(&mut self, module_name: &str, module: Self) {
+        let mut module = module;
+        module.qualify(module_name);
+        self.type_defs.append(&mut module.type_defs);
+        self.declarations.append(&mut module.declarations);
+        self.definitions.append(&mut module.definitions);
+    }
+
+    pub fn qualify(&mut self, module: &str) {
+        for TypeDef {
+            span: _,
+            name,
+            params: _,
+            typ,
+        } in &mut self.type_defs
+        {
+            name.qualify(module);
+            typ.qualify(module);
+        }
+        for Declaration { span: _, name, typ } in &mut self.declarations {
+            name.qualify(module);
+            typ.qualify(module);
+        }
+        for Definition {
+            span: _,
+            name,
+            expression,
+        } in &mut self.definitions
+        {
+            name.qualify(module);
+            *expression = expression.clone().qualify(module);
+        }
+    }
+
+    pub fn type_check(&self) -> Result<CheckedModule, TypeError> {
         let type_defs = TypeDefs::new_with_validation(
             self.type_defs
                 .iter()
@@ -97,7 +131,7 @@ impl Program<Arc<process::Expression<()>>> {
             context.check_definition(&span, &name)?;
         }
 
-        Ok(CheckedProgram {
+        Ok(CheckedModule {
             type_defs: context.get_type_defs().clone(),
             declarations: context
                 .get_declarations()
@@ -122,7 +156,7 @@ impl Program<Arc<process::Expression<()>>> {
     }
 }
 
-impl<Expr> Default for Program<Expr> {
+impl<Expr> Default for Module<Expr> {
     fn default() -> Self {
         Self {
             type_defs: Vec::new(),
@@ -140,7 +174,7 @@ pub struct TypeOnHover {
 }
 
 impl TypeOnHover {
-    pub fn new(program: &CheckedProgram) -> Self {
+    pub fn new(program: &CheckedModule) -> Self {
         let mut pairs = Vec::new();
 
         for (_, definition) in &program.definitions {
@@ -160,6 +194,10 @@ impl TypeOnHover {
 
 impl TypeOnHover {
     pub fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
+        if self.sorted_pairs.len() == 0 {
+            return None;
+        }
+
         // find index with the greatest start that is <= than (row, column)
         let (mut lo, mut hi) = (0, self.sorted_pairs.len());
         while lo + 1 < hi {

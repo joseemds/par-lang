@@ -7,25 +7,139 @@ use crate::par::types::{PrimitiveType, Type, TypeDefs};
 use super::{compiler::TypedTree, Net, PrimitiveComb, Tree};
 
 pub struct Handle {
+    net: Arc<Mutex<Net>>,
+    tree: Tree,
+}
+
+pub struct TypedHandle {
     type_defs: TypeDefs,
     net: Arc<Mutex<Net>>,
     tree: TypedTree,
 }
 
-pub enum Readback {
+pub enum TypedReadback {
     Int(i128),
     IntRequest(Box<dyn Send + FnOnce(i128)>),
 
-    Times(Handle, Handle),
-    Par(Handle, Handle),
-    Either(String, Handle),
-    Choice(Vec<String>, Box<dyn Send + FnOnce(&str) -> Handle>),
+    Times(TypedHandle, TypedHandle),
+    Par(TypedHandle, TypedHandle),
+    Either(String, TypedHandle),
+    Choice(Vec<String>, Box<dyn Send + FnOnce(&str) -> TypedHandle>),
 
     Break,
     Continue,
 }
 
 impl Handle {
+    pub fn new(net: Arc<Mutex<Net>>, tree: Tree) -> Self {
+        Self { net, tree }
+    }
+
+    pub async fn int(self) -> i128 {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree);
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_int(self, value: i128) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree);
+        locked.notify_reducer();
+    }
+
+    pub fn send(self) -> (Self, Self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(Tree::c(u1, t1), self.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        (
+            Self {
+                net: Arc::clone(&self.net),
+                tree: t0,
+            },
+            Self {
+                net: self.net,
+                tree: u0,
+            },
+        )
+    }
+
+    pub fn receive(self) -> (Self, Self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(Tree::c(u1, t1), self.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        (
+            Self {
+                net: Arc::clone(&self.net),
+                tree: t0,
+            },
+            Self {
+                net: self.net,
+                tree: u0,
+            },
+        )
+    }
+
+    pub fn signal(self, index: u16, size: u16) -> Self {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        locked.link(Tree::Signal(index, size, Box::new(a1)), self.tree);
+        locked.notify_reducer();
+        drop(locked);
+
+        Self {
+            net: self.net,
+            tree: a0,
+        }
+    }
+
+    pub async fn case(self, size: u16) -> (u16, Self) {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::SignalRequest(tx), self.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        let (index, actual_size, tree) = rx.await.expect("sender dropped");
+        assert_eq!(size, actual_size);
+
+        (
+            index,
+            Self {
+                net: self.net,
+                tree: *tree,
+            },
+        )
+    }
+
+    pub fn break_(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree);
+        locked.notify_reducer();
+    }
+
+    pub fn continue_(self) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Era, self.tree);
+        locked.notify_reducer();
+    }
+}
+
+impl TypedHandle {
     pub fn new(type_defs: TypeDefs, net: Arc<Mutex<Net>>, tree: TypedTree) -> Self {
         Self {
             type_defs,
@@ -38,48 +152,48 @@ impl Handle {
         Arc::clone(&self.net)
     }
 
-    pub async fn readback(mut self) -> Readback {
+    pub async fn readback(mut self) -> TypedReadback {
         self.prepare_for_readback();
 
         match &self.tree.ty {
-            Type::Primitive(_, PrimitiveType::Int) => Readback::Int(self.int().await),
+            Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
 
             typ @ Type::Chan(_, dual) => match dual.as_ref() {
                 Type::Primitive(_, PrimitiveType::Int) => {
-                    Readback::IntRequest(Box::new(move |value| self.provide_int(value)))
+                    TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
                 }
 
                 _ => panic!("Unsupported dual type for readback: {:?}", typ),
             },
 
-            Type::Send(_, _, _) => {
+            Type::Pair(_, _, _) => {
                 let (t_handle, u_handle) = self.receive();
-                Readback::Times(t_handle, u_handle)
+                TypedReadback::Times(t_handle, u_handle)
             }
 
-            Type::Receive(_, _, _) => {
+            Type::Function(_, _, _) => {
                 let (t_handle, u_handle) = self.send();
-                Readback::Par(t_handle, u_handle)
+                TypedReadback::Par(t_handle, u_handle)
             }
 
             Type::Either(_, _) => {
                 let (signal, handle) = self.case().await;
-                Readback::Either(signal, handle)
+                TypedReadback::Either(signal, handle)
             }
 
-            Type::Choice(_, branches) => Readback::Choice(
+            Type::Choice(_, branches) => TypedReadback::Choice(
                 branches.keys().map(|k| k.string.clone()).collect(),
                 Box::new(move |signal| self.signal(signal)),
             ),
 
             Type::Break(_) => {
                 self.continue_();
-                Readback::Break
+                TypedReadback::Break
             }
 
             Type::Continue(_) => {
                 self.break_();
-                Readback::Continue
+                TypedReadback::Continue
             }
 
             typ => panic!("Unsupported type for readback: {:?}", typ),
@@ -119,7 +233,7 @@ impl Handle {
 
     pub fn send(mut self) -> (Self, Self) {
         self.prepare_for_readback();
-        let Type::Receive(_, t, u) = self.tree.ty else {
+        let Type::Function(_, t, u) = self.tree.ty else {
             panic!("Incorrect type for `send`: {:?}", self.tree.ty);
         };
 
@@ -146,7 +260,7 @@ impl Handle {
 
     pub fn receive(mut self) -> (Self, Self) {
         self.prepare_for_readback();
-        let Type::Send(_, t, u) = self.tree.ty else {
+        let Type::Pair(_, t, u) = self.tree.ty else {
             panic!("Incorrect type for `receive`: {:?}", self.tree.ty);
         };
 
@@ -247,7 +361,7 @@ impl Handle {
     }
 }
 
-impl Handle {
+impl TypedHandle {
     fn prepare_for_readback(&mut self) {
         self.tree.ty = expand_type(
             std::mem::replace(&mut self.tree.ty, Type::Break(Default::default())),

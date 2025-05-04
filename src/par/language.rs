@@ -226,6 +226,14 @@ impl Display for LocalName {
 }
 
 impl GlobalName {
+    pub fn qualify(&mut self, module: &str) {
+        let new = match self.module.take() {
+            Some(old) => old,
+            None => String::from(module),
+        };
+        self.module = Some(new);
+    }
+
     fn no_module_or_same_as_primary(&self) -> bool {
         if let Some(module) = &self.module {
             module == &self.primary
@@ -403,12 +411,12 @@ impl Pattern {
             Self::Receive(span, first, rest) => {
                 let first = first.annotation()?;
                 let rest = rest.annotation()?;
-                Some(Type::Send(span.clone(), Box::new(first), Box::new(rest)))
+                Some(Type::Pair(span.clone(), Box::new(first), Box::new(rest)))
             }
             Self::Continue(span) => Some(Type::Break(span.clone())),
             Self::ReceiveType(span, parameter, rest) => {
                 let rest = rest.annotation()?;
-                Some(Type::SendType(
+                Some(Type::Exists(
                     span.clone(),
                     parameter.clone(),
                     Box::new(rest),

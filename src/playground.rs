@@ -11,8 +11,11 @@ use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use indexmap::IndexMap;
 
 use crate::{
-    icombs::readback::Handle,
-    par::program::{Definition, NameWithType, Program, TypeOnHover},
+    icombs::readback::TypedHandle,
+    par::{
+        builtin::import_builtins,
+        program::{Definition, Module, NameWithType, TypeOnHover},
+    },
     readback::Element,
 };
 use crate::{
@@ -25,7 +28,7 @@ use crate::{
     },
     spawn::TokioSpawn,
 };
-use crate::{location::Span, par::program::CheckedProgram};
+use crate::{location::Span, par::program::CheckedModule};
 use miette::{LabeledSpan, SourceOffset, SourceSpan};
 
 pub struct Playground {
@@ -107,16 +110,18 @@ impl Compiled {
                 compile_result
                     .map_err(|error| Error::Compile(error))
                     .and_then(|compiled| {
-                        Ok(Compiled::from_program(Program {
+                        let mut module = Module {
                             type_defs: program.type_defs,
                             declarations: program.declarations,
                             definitions: compiled,
-                        })?)
+                        };
+                        import_builtins(&mut module);
+                        Ok(Compiled::from_program(module)?)
                     })
             })
     }
 
-    pub(crate) fn from_program(program: Program<Arc<Expression<()>>>) -> Result<Self, Error> {
+    pub(crate) fn from_program(program: Module<Arc<Expression<()>>>) -> Result<Self, Error> {
         let pretty = program
             .definitions
             .iter()
@@ -149,14 +154,14 @@ impl Compiled {
 
 #[derive(Clone)]
 pub(crate) struct Checked {
-    pub(crate) program: Arc<CheckedProgram>,
+    pub(crate) program: Arc<CheckedModule>,
     pub(crate) type_on_hover: Arc<TypeOnHover>,
     pub(crate) ic_compiled: Option<crate::icombs::IcCompiled>,
 }
 
 impl Checked {
     pub(crate) fn from_program(
-        program: CheckedProgram,
+        program: CheckedModule,
     ) -> Result<Self, crate::icombs::compiler::Error> {
         // attempt to compile to interaction combinators
         Ok(Checked {
@@ -398,7 +403,7 @@ impl Playground {
     fn readback(
         element: &mut Option<Arc<Mutex<Element>>>,
         ui: &mut egui::Ui,
-        program: Arc<CheckedProgram>,
+        program: Arc<CheckedModule>,
         compiled: &IcCompiled,
     ) {
         for (name, _) in &program.definitions {
@@ -407,7 +412,7 @@ impl Playground {
                 let mut net = compiled.create_net();
                 let child_net = compiled.get_with_name(name).unwrap();
                 let tree = net.inject_net(child_net).with_type(ty.clone());
-                let net = net.start_reducer(TokioSpawn);
+                let net = net.start_reducer(Arc::new(TokioSpawn));
 
                 let ctx = ui.ctx().clone();
                 *element = Some(Element::new(
@@ -415,7 +420,7 @@ impl Playground {
                         ctx.request_repaint();
                     }),
                     Arc::new(TokioSpawn),
-                    Handle::new(program.type_defs.clone(), net, tree),
+                    TypedHandle::new(program.type_defs.clone(), net, tree),
                 ));
             }
         }

@@ -3,10 +3,15 @@ use super::{
     primitive::Primitive,
     types::Type,
 };
-use crate::location::{Span, Spanning};
+use crate::{
+    icombs::readback::Handle,
+    location::{Span, Spanning},
+};
 use indexmap::IndexMap;
 use std::{
     fmt::{self, Write},
+    future::Future,
+    pin::Pin,
     sync::Arc,
 };
 
@@ -63,6 +68,11 @@ pub enum Expression<Typ> {
         process: Arc<Process<Typ>>,
     },
     Primitive(Span, Primitive, Typ),
+    External(
+        Type,
+        fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+        Typ,
+    ),
 }
 
 #[derive(Clone, Debug)]
@@ -437,6 +447,10 @@ impl<Typ: Clone> Expression<Typ> {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone())),
                 Captures::new(),
             ),
+            Self::External(claimed_type, f, typ) => (
+                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone())),
+                Captures::new(),
+            ),
         }
     }
 
@@ -468,6 +482,9 @@ impl<Typ: Clone> Expression<Typ> {
             Self::Primitive(span, value, typ) => {
                 Arc::new(Self::Primitive(span.clone(), value.clone(), typ.clone()))
             }
+            Self::External(claimed_type, f, typ) => {
+                Arc::new(Self::External(claimed_type.clone(), *f, typ.clone()))
+            }
         }
     }
 }
@@ -495,6 +512,7 @@ impl<Typ: Clone> Expression<Typ> {
                 process.types_at_spans(consume);
             }
             Self::Primitive(_, _, _) => {}
+            Self::External(_, _, _) => {}
         }
     }
 }
@@ -506,7 +524,132 @@ impl<Typ: Clone> Expression<Typ> {
             Self::Variable(_, _, typ) => typ.clone(),
             Self::Fork { expr_type, .. } => expr_type.clone(),
             Self::Primitive(_, _, typ) => typ.clone(),
+            Self::External(_, _, typ) => typ.clone(),
         }
+    }
+}
+
+impl Process<()> {
+    pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
+        Arc::new(match Self::clone(&self) {
+            Self::Let {
+                span,
+                name,
+                mut annotation,
+                typ: (),
+                value,
+                then,
+            } => {
+                if let Some(annotation) = &mut annotation {
+                    annotation.qualify(module);
+                }
+                Self::Let {
+                    span,
+                    name,
+                    annotation,
+                    typ: (),
+                    value: value.qualify(module),
+                    then: then.qualify(module),
+                }
+            }
+            Self::Do {
+                span,
+                name,
+                typ: (),
+                mut command,
+            } => {
+                command.qualify(module);
+                Self::Do {
+                    span,
+                    name,
+                    typ: (),
+                    command,
+                }
+            }
+            Self::Telltypes(span, process) => Self::Telltypes(span, process.qualify(module)),
+        })
+    }
+}
+
+impl Command<()> {
+    pub fn qualify(&mut self, module: &str) {
+        match self {
+            Self::Link(expression) => {
+                *expression = expression.clone().qualify(module);
+            }
+            Self::Send(expression, process) => {
+                *expression = expression.clone().qualify(module);
+                *process = process.clone().qualify(module);
+            }
+            Self::Receive(_, annotation, (), process) => {
+                if let Some(annotation) = annotation {
+                    annotation.qualify(module);
+                }
+                *process = process.clone().qualify(module);
+            }
+            Self::Signal(_, process) => {
+                *process = process.clone().qualify(module);
+            }
+            Self::Case(_, branches) => {
+                for process in branches {
+                    *process = process.clone().qualify(module);
+                }
+            }
+            Self::Break => {}
+            Self::Continue(process) => {
+                *process = process.clone().qualify(module);
+            }
+            Self::Begin { body, .. } => {
+                *body = body.clone().qualify(module);
+            }
+            Self::Loop(_, _) => {}
+            Self::SendType(argument, process) => {
+                argument.qualify(module);
+                *process = process.clone().qualify(module);
+            }
+            Self::ReceiveType(_, process) => {
+                *process = process.clone().qualify(module);
+            }
+        }
+    }
+}
+
+impl Expression<()> {
+    pub fn qualify(self: Arc<Self>, module: &str) -> Arc<Self> {
+        Arc::new(match Self::clone(&self) {
+            Self::Global(span, mut name, ()) => {
+                name.qualify(module);
+                Self::Global(span, name, ())
+            }
+            Self::Variable(span, name, ()) => Self::Variable(span, name, ()),
+            Self::Fork {
+                span,
+                captures,
+                chan_name,
+                mut chan_annotation,
+                chan_type: (),
+                expr_type: (),
+                process,
+            } => {
+                if let Some(chan_annotation) = &mut chan_annotation {
+                    chan_annotation.qualify(module);
+                }
+                Self::Fork {
+                    span,
+                    captures,
+                    chan_name,
+                    chan_annotation,
+                    chan_type: (),
+                    expr_type: (),
+                    process: process.qualify(module),
+                }
+            }
+            Self::Primitive(span, primitive, ()) => Self::Primitive(span, primitive, ()),
+            Self::External(mut claimed_type, f, ()) => {
+                claimed_type.qualify(module);
+                Self::External(claimed_type, f, ())
+            }
+        })
     }
 }
 
@@ -648,11 +791,11 @@ impl<Typ> Expression<Typ> {
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Global(_, name, _) => {
-                write!(f, ":{}", name)
+                write!(f, "{}", name)
             }
 
             Self::Variable(_, name, _) => {
-                write!(f, "${}", name)
+                write!(f, "{}", name)
             }
 
             Self::Fork {
@@ -678,6 +821,10 @@ impl<Typ> Expression<Typ> {
                 write!(f, "#{{")?;
                 value.pretty(f, indent)?;
                 write!(f, "}}")
+            }
+
+            Self::External(_, _, _) => {
+                write!(f, "<external>")
             }
         }
     }

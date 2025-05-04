@@ -65,8 +65,8 @@ pub enum Type {
     Var(Span, LocalName),
     /// named type
     Name(Span, GlobalName, Vec<Type>),
-    Send(Span, Box<Self>, Box<Self>),
-    Receive(Span, Box<Self>, Box<Self>),
+    Pair(Span, Box<Self>, Box<Self>),
+    Function(Span, Box<Self>, Box<Self>),
     Either(Span, BTreeMap<LocalName, Self>),
     Choice(Span, BTreeMap<LocalName, Self>),
     /// ! (unit)
@@ -92,11 +92,11 @@ pub enum Type {
         body: Box<Self>,
     },
     Self_(Span, Option<LocalName>),
-    SendType(Span, LocalName, Box<Self>),
-    ReceiveType(Span, LocalName, Box<Self>),
+    Exists(Span, LocalName, Box<Self>),
+    Forall(Span, LocalName, Box<Self>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrimitiveType {
     Int,
 }
@@ -232,11 +232,11 @@ impl TypeDefs {
                 let t = self.get(span, name, args)?;
                 self.validate_type(&t, &deps, self_pos, self_neg)?;
             }
-            Type::Send(_, t, u) => {
+            Type::Pair(_, t, u) => {
                 self.validate_type(t, deps, self_pos, self_neg)?;
                 self.validate_type(u, deps, self_pos, self_neg)?;
             }
-            Type::Receive(_, t, u) => {
+            Type::Function(_, t, u) => {
                 self.validate_type(t, deps, self_neg, self_pos)?;
                 self.validate_type(u, deps, self_pos, self_neg)?;
             }
@@ -267,7 +267,7 @@ impl TypeDefs {
                 }
             }
 
-            Type::SendType(_, name, body) | Type::ReceiveType(_, name, body) => {
+            Type::Exists(_, name, body) | Type::Forall(_, name, body) => {
                 let mut with_var = self.clone();
                 with_var.vars.insert(name.clone());
                 with_var.validate_type(body, deps, self_pos, self_neg)?;
@@ -283,8 +283,8 @@ impl Spanning for Type {
             | Self::Chan(span, _)
             | Self::Var(span, _)
             | Self::Name(span, _, _)
-            | Self::Send(span, _, _)
-            | Self::Receive(span, _, _)
+            | Self::Pair(span, _, _)
+            | Self::Function(span, _, _)
             | Self::Either(span, _)
             | Self::Choice(span, _)
             | Self::Break(span)
@@ -292,8 +292,8 @@ impl Spanning for Type {
             | Self::Recursive { span, .. }
             | Self::Iterative { span, .. }
             | Self::Self_(span, _)
-            | Self::SendType(span, _, _)
-            | Self::ReceiveType(span, _, _) => span.clone(),
+            | Self::Exists(span, _, _)
+            | Self::Forall(span, _, _) => span.clone(),
         }
     }
 }
@@ -317,12 +317,12 @@ impl Type {
                     .map(|arg| arg.substitute(var, typ))
                     .collect::<Result<_, _>>()?,
             ),
-            Self::Send(loc, t, u) => Self::Send(
+            Self::Pair(loc, t, u) => Self::Pair(
                 loc,
                 Box::new(t.substitute(var, typ)?),
                 Box::new(u.substitute(var, typ)?),
             ),
-            Self::Receive(loc, t, u) => Self::Receive(
+            Self::Function(loc, t, u) => Self::Function(
                 loc,
                 Box::new(t.substitute(var, typ)?),
                 Box::new(u.substitute(var, typ)?),
@@ -368,18 +368,18 @@ impl Type {
             },
             Self::Self_(span, label) => Self::Self_(span, label),
 
-            Self::SendType(loc, name, body) => {
+            Self::Exists(loc, name, body) => {
                 if &name == var {
-                    Self::SendType(loc, name, body)
+                    Self::Exists(loc, name, body)
                 } else {
-                    Self::SendType(loc, name, Box::new(body.substitute(var, typ)?))
+                    Self::Exists(loc, name, Box::new(body.substitute(var, typ)?))
                 }
             }
-            Self::ReceiveType(loc, name, body) => {
+            Self::Forall(loc, name, body) => {
                 if &name == var {
-                    Self::ReceiveType(loc, name, body)
+                    Self::Forall(loc, name, body)
                 } else {
-                    Self::ReceiveType(loc, name, Box::new(body.substitute(var, typ)?))
+                    Self::Forall(loc, name, Box::new(body.substitute(var, typ)?))
                 }
             }
         })
@@ -397,8 +397,8 @@ impl Type {
             Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_positive(type_defs)?
             }
-            Self::Send(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
-            Self::Receive(_, _, _) => false,
+            Self::Pair(_, t, u) => t.is_positive(type_defs)? && u.is_positive(type_defs)?,
+            Self::Function(_, _, _) => false,
             Self::Either(_, branches) => {
                 for (_, t) in branches {
                     if !t.is_positive(type_defs)? {
@@ -413,11 +413,11 @@ impl Type {
             Self::Recursive { body, .. } => body.is_positive(type_defs)?,
             Self::Iterative { body, .. } => body.is_positive(type_defs)?,
             Self::Self_(_, _) => true,
-            Self::SendType(loc, name, t) => t
+            Self::Exists(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_positive(type_defs)?,
-            Self::ReceiveType(loc, name, t) => t
+            Self::Forall(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_positive(type_defs)?,
@@ -432,8 +432,8 @@ impl Type {
             Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_negative(type_defs)?
             }
-            Self::Send(_, _, _) => false,
-            Self::Receive(_, t, u) => t.is_positive(type_defs)? && u.is_negative(type_defs)?,
+            Self::Pair(_, _, _) => false,
+            Self::Function(_, t, u) => t.is_positive(type_defs)? && u.is_negative(type_defs)?,
             Self::Either(_, _) => false,
             Self::Choice(_, branches) => {
                 for (_, t) in branches {
@@ -448,11 +448,11 @@ impl Type {
             Self::Recursive { body, .. } => body.is_negative(type_defs)?,
             Self::Iterative { body, .. } => body.is_negative(type_defs)?,
             Self::Self_(_, _) => true,
-            Self::SendType(loc, name, t) => t
+            Self::Exists(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_negative(type_defs)?,
-            Self::ReceiveType(loc, name, t) => t
+            Self::Forall(loc, name, t) => t
                 .clone()
                 .substitute(name, &Type::Var(loc.clone(), name.clone()))?
                 .is_negative(type_defs)?,
@@ -482,6 +482,8 @@ impl Type {
         ind: &HashSet<(Option<LocalName>, Option<LocalName>)>,
     ) -> Result<bool, TypeError> {
         Ok(match (self, other) {
+            (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
+
             (Self::Chan(_, dual_t1), Self::Chan(_, dual_t2)) => {
                 dual_t2.is_assignable_to(dual_t1, type_defs, ind)?
             }
@@ -502,11 +504,11 @@ impl Type {
                 t1.is_assignable_to(&type_defs.get(span, name, args)?, type_defs, ind)?
             }
 
-            (Self::Send(_, t1, u1), Self::Send(_, t2, u2)) => {
+            (Self::Pair(_, t1, u1), Self::Pair(_, t2, u2)) => {
                 t1.is_assignable_to(t2, type_defs, ind)?
                     && u1.is_assignable_to(u2, type_defs, ind)?
             }
-            (Self::Receive(_, t1, u1), Self::Receive(_, t2, u2)) => {
+            (Self::Function(_, t1, u1), Self::Function(_, t2, u2)) => {
                 t2.is_assignable_to(t1, type_defs, ind)?
                     && u1.is_assignable_to(u2, type_defs, ind)?
             }
@@ -609,8 +611,8 @@ impl Type {
                 ind.contains(&(label1.clone(), label2.clone()))
             }
 
-            (Self::SendType(loc, name1, body1), Self::SendType(_, name2, body2))
-            | (Self::ReceiveType(loc, name1, body1), Self::ReceiveType(_, name2, body2)) => {
+            (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
+            | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
                 let body2 = body2
                     .clone()
                     .substitute(name2, &Type::Var(loc.clone(), name1.clone()))?;
@@ -644,11 +646,11 @@ impl Type {
                 ),
             },
 
-            Self::Send(loc, t, u) => {
-                Self::Receive(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
+            Self::Pair(loc, t, u) => {
+                Self::Function(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
             }
-            Self::Receive(loc, t, u) => {
-                Self::Send(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
+            Self::Function(loc, t, u) => {
+                Self::Pair(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
             }
             Self::Either(span, branches) => Self::Choice(
                 span.clone(),
@@ -694,11 +696,11 @@ impl Type {
                 Box::new(Self::Self_(span.clone(), label.clone())),
             ),
 
-            Self::SendType(loc, name, t) => {
-                Self::ReceiveType(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
+            Self::Exists(loc, name, t) => {
+                Self::Forall(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
             }
-            Self::ReceiveType(loc, name, t) => {
-                Self::SendType(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
+            Self::Forall(loc, name, t) => {
+                Self::Exists(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
             }
         })
     }
@@ -719,12 +721,12 @@ impl Type {
                 args.into_iter().map(|arg| arg.chan_self(label)).collect(),
             ),
 
-            Self::Send(loc, t, u) => Self::Send(
+            Self::Pair(loc, t, u) => Self::Pair(
                 loc.clone(),
                 Box::new(t.chan_self(label)),
                 Box::new(u.chan_self(label)),
             ),
-            Self::Receive(loc, t, u) => Self::Receive(
+            Self::Function(loc, t, u) => Self::Function(
                 loc.clone(),
                 Box::new(t.chan_self(label)),
                 Box::new(u.chan_self(label)),
@@ -798,11 +800,11 @@ impl Type {
                 }
             }
 
-            Self::SendType(loc, name, t) => {
-                Self::SendType(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
+            Self::Exists(loc, name, t) => {
+                Self::Exists(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
             }
-            Self::ReceiveType(loc, name, t) => {
-                Self::ReceiveType(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
+            Self::Forall(loc, name, t) => {
+                Self::Forall(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
             }
         }
     }
@@ -851,12 +853,12 @@ impl Type {
                     .collect::<Result<_, _>>()?,
             ),
 
-            Self::Send(loc, t, u) => Self::Send(
+            Self::Pair(loc, t, u) => Self::Pair(
                 loc,
                 Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
                 Box::new(u.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
             ),
-            Self::Receive(loc, t, u) => Self::Receive(
+            Self::Function(loc, t, u) => Self::Function(
                 loc,
                 Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
                 Box::new(u.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
@@ -936,12 +938,12 @@ impl Type {
                 }
             }
 
-            Self::SendType(loc, name, t) => Self::SendType(
+            Self::Exists(loc, name, t) => Self::Exists(
                 loc,
                 name,
                 Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
             ),
-            Self::ReceiveType(loc, name, t) => Self::ReceiveType(
+            Self::Forall(loc, name, t) => Self::Forall(
                 loc,
                 name,
                 Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
@@ -993,12 +995,12 @@ impl Type {
                     .collect::<Result<_, _>>()?,
             ),
 
-            Self::Send(loc, t, u) => Self::Send(
+            Self::Pair(loc, t, u) => Self::Pair(
                 loc,
                 Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
                 Box::new(u.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
             ),
-            Self::Receive(loc, t, u) => Self::Receive(
+            Self::Function(loc, t, u) => Self::Function(
                 loc,
                 Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
                 Box::new(u.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
@@ -1078,12 +1080,12 @@ impl Type {
                 }
             }
 
-            Self::SendType(loc, name, t) => Self::SendType(
+            Self::Exists(loc, name, t) => Self::Exists(
                 loc,
                 name,
                 Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
             ),
-            Self::ReceiveType(loc, name, t) => Self::ReceiveType(
+            Self::Forall(loc, name, t) => Self::Forall(
                 loc,
                 name,
                 Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
@@ -1100,11 +1102,11 @@ impl Type {
                     arg.invalidate_ascendent(label);
                 }
             }
-            Self::Send(_, t, u) => {
+            Self::Pair(_, t, u) => {
                 t.invalidate_ascendent(label);
                 u.invalidate_ascendent(label);
             }
-            Self::Receive(_, t, u) => {
+            Self::Function(_, t, u) => {
                 t.invalidate_ascendent(label);
                 u.invalidate_ascendent(label);
             }
@@ -1141,10 +1143,10 @@ impl Type {
             }
             Self::Self_(_, _) => {}
 
-            Self::SendType(_, _, t) => {
+            Self::Exists(_, _, t) => {
                 t.invalidate_ascendent(label);
             }
-            Self::ReceiveType(_, _, t) => {
+            Self::Forall(_, _, t) => {
                 t.invalidate_ascendent(label);
             }
 
@@ -1473,7 +1475,7 @@ impl Context {
             }
 
             Command::Send(argument, process) => {
-                let Type::Receive(_, argument_type, then_type) = typ else {
+                let Type::Function(_, argument_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Send(span.clone()),
@@ -1487,7 +1489,7 @@ impl Context {
             }
 
             Command::Receive(parameter, annotation, (), process) => {
-                let Type::Send(_, parameter_type, then_type) = typ else {
+                let Type::Pair(_, parameter_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::Receive(span.clone()),
@@ -1754,7 +1756,7 @@ impl Context {
             }
 
             Command::SendType(argument, process) => {
-                let Type::ReceiveType(_, type_name, then_type) = typ else {
+                let Type::Forall(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::SendType(span.clone()),
@@ -1768,7 +1770,7 @@ impl Context {
             }
 
             Command::ReceiveType(parameter, process) => {
-                let Type::SendType(_, type_name, then_type) = typ else {
+                let Type::Exists(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
                         Operation::ReceiveType(span.clone()),
@@ -1898,7 +1900,7 @@ impl Context {
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::Send(argument, process),
-                    Type::Receive(span.clone(), Box::new(arg_type), Box::new(then_type)),
+                    Type::Function(span.clone(), Box::new(arg_type), Box::new(then_type)),
                 )
             }
 
@@ -1919,7 +1921,7 @@ impl Context {
                         param_type.clone(),
                         process,
                     ),
-                    Type::Send(
+                    Type::Pair(
                         span.clone(),
                         Box::new(param_type.clone()),
                         Box::new(then_type),
@@ -2044,7 +2046,7 @@ impl Context {
                 let (process, then_type) = self.infer_process(process, subject)?;
                 (
                     Command::ReceiveType(parameter.clone(), process),
-                    Type::SendType(span.clone(), parameter.clone(), Box::new(then_type)),
+                    Type::Exists(span.clone(), parameter.clone(), Box::new(then_type)),
                 )
             }
         })
@@ -2124,6 +2126,16 @@ impl Context {
                 Ok(Arc::new(Expression::Primitive(
                     span.clone(),
                     value.clone(),
+                    typ,
+                )))
+            }
+
+            Expression::External(claimed_type, f, ()) => {
+                let typ = claimed_type.clone();
+                typ.check_assignable(&Default::default(), target_type, &self.type_defs)?;
+                Ok(Arc::new(Expression::External(
+                    claimed_type.clone(),
+                    *f,
                     typ,
                 )))
             }
@@ -2208,6 +2220,14 @@ impl Context {
                     typ,
                 ))
             }
+
+            Expression::External(claimed_type, f, ()) => {
+                let typ = claimed_type.clone();
+                Ok((
+                    Arc::new(Expression::External(claimed_type.clone(), *f, typ.clone())),
+                    typ,
+                ))
+            }
         }
     }
 
@@ -2222,7 +2242,70 @@ impl Context {
     }
 }
 
+impl TypeDefs {
+    pub fn quality(&mut self, module: &str) {
+        let mut globals = IndexMap::new();
+        for (name, (span, args, typ)) in self.globals.iter() {
+            let mut name = name.clone();
+            let span = span.clone();
+            let args = args.clone();
+            let mut typ = typ.clone();
+            name.qualify(module);
+            typ.qualify(module);
+            globals.insert(name, (span, args, typ));
+        }
+        self.globals = Arc::new(globals);
+    }
+}
+
 impl Type {
+    pub fn qualify(&mut self, module: &str) {
+        match self {
+            Self::Primitive(_, _) => {}
+            Self::Chan(_, t) => t.qualify(module),
+            Self::Var(_, _) => {}
+            Self::Name(_, name, args) => {
+                name.qualify(module);
+                for arg in args {
+                    arg.qualify(module);
+                }
+            }
+            Self::Pair(_, t, u) => {
+                t.qualify(module);
+                u.qualify(module);
+            }
+            Self::Function(_, t, u) => {
+                t.qualify(module);
+                u.qualify(module);
+            }
+            Self::Either(_, branches) => {
+                for (_, typ) in branches {
+                    typ.qualify(module);
+                }
+            }
+            Self::Choice(_, branches) => {
+                for (_, typ) in branches {
+                    typ.qualify(module);
+                }
+            }
+            Self::Break(_) => {}
+            Self::Continue(_) => {}
+            Self::Recursive { body, .. } => {
+                body.qualify(module);
+            }
+            Self::Iterative { body, .. } => {
+                body.qualify(module);
+            }
+            Self::Self_(_, _) => {}
+            Self::Exists(_, _, body) => {
+                body.qualify(module);
+            }
+            Self::Forall(_, _, body) => {
+                body.qualify(module);
+            }
+        }
+    }
+
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
@@ -2247,11 +2330,11 @@ impl Type {
                 Ok(())
             }
 
-            Self::Send(_, arg, then) => {
+            Self::Pair(_, arg, then) => {
                 let mut then = then;
                 write!(f, "(")?;
                 arg.pretty(f, indent)?;
-                while let Self::Send(_, arg, next) = then.as_ref() {
+                while let Self::Pair(_, arg, next) = then.as_ref() {
                     write!(f, ", ")?;
                     arg.pretty(f, indent)?;
                     then = next;
@@ -2264,11 +2347,11 @@ impl Type {
                 }
             }
 
-            Self::Receive(_, param, then) => {
+            Self::Function(_, param, then) => {
                 let mut then = then;
                 write!(f, "[")?;
                 param.pretty(f, indent)?;
-                while let Self::Receive(_, param, next) = then.as_ref() {
+                while let Self::Function(_, param, next) = then.as_ref() {
                     write!(f, ", ")?;
                     param.pretty(f, indent)?;
                     then = next;
@@ -2330,10 +2413,10 @@ impl Type {
                 Ok(())
             }
 
-            Self::SendType(_, name, then) => {
+            Self::Exists(_, name, then) => {
                 let mut then = then;
                 write!(f, "(type {name}")?;
-                while let Self::SendType(_, name, next) = then.as_ref() {
+                while let Self::Exists(_, name, next) = then.as_ref() {
                     write!(f, ", {name}")?;
                     then = next;
                 }
@@ -2341,10 +2424,10 @@ impl Type {
                 then.pretty(f, indent)
             }
 
-            Self::ReceiveType(_, name, then) => {
+            Self::Forall(_, name, then) => {
                 let mut then = then;
                 write!(f, "[type {name}")?;
-                while let Self::ReceiveType(_, name, next) = then.as_ref() {
+                while let Self::Forall(_, name, next) = then.as_ref() {
                     write!(f, ", {name}")?;
                     then = next;
                 }
@@ -2378,11 +2461,11 @@ impl Type {
                 Ok(())
             }
 
-            Self::Send(_, arg, then) => {
+            Self::Pair(_, arg, then) => {
                 let mut then = then;
                 write!(f, "(")?;
                 arg.pretty_compact(f)?;
-                while let Self::Send(_, arg, next) = then.as_ref() {
+                while let Self::Pair(_, arg, next) = then.as_ref() {
                     write!(f, ", ")?;
                     arg.pretty_compact(f)?;
                     then = next;
@@ -2395,11 +2478,11 @@ impl Type {
                 }
             }
 
-            Self::Receive(_, param, then) => {
+            Self::Function(_, param, then) => {
                 let mut then = then;
                 write!(f, "[")?;
                 param.pretty_compact(f)?;
-                while let Self::Receive(_, param, next) = then.as_ref() {
+                while let Self::Function(_, param, next) = then.as_ref() {
                     write!(f, ", ")?;
                     param.pretty_compact(f)?;
                     then = next;
@@ -2461,10 +2544,10 @@ impl Type {
                 Ok(())
             }
 
-            Self::SendType(_, name, then) => {
+            Self::Exists(_, name, then) => {
                 let mut then = then;
                 write!(f, "(type {name}")?;
-                while let Self::SendType(_, name, next) = then.as_ref() {
+                while let Self::Exists(_, name, next) = then.as_ref() {
                     write!(f, ", {name}")?;
                     then = next;
                 }
@@ -2472,10 +2555,10 @@ impl Type {
                 then.pretty_compact(f)
             }
 
-            Self::ReceiveType(_, name, then) => {
+            Self::Forall(_, name, then) => {
                 let mut then = then;
                 write!(f, "[type {name}")?;
-                while let Self::ReceiveType(_, name, next) = then.as_ref() {
+                while let Self::Forall(_, name, next) = then.as_ref() {
                     write!(f, ", {name}")?;
                     then = next;
                 }

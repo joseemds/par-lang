@@ -9,7 +9,7 @@ use super::{
 use crate::location::{Point, Span, Spanning};
 use crate::par::{
     language::LocalName,
-    program::{Declaration, Definition, Program, TypeDef},
+    program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
 use core::fmt::Display;
@@ -187,7 +187,7 @@ impl ProgramParseError {
     }
 }
 
-fn program(mut input: Input) -> std::result::Result<Program<Expression>, ProgramParseError> {
+fn program(mut input: Input) -> std::result::Result<Module<Expression>, ProgramParseError> {
     enum Item<Expr> {
         TypeDef(TypeDef),
         Declaration(Declaration),
@@ -203,7 +203,7 @@ fn program(mut input: Input) -> std::result::Result<Program<Expression>, Program
         ))
         .context(StrContext::Label("item")),
     )
-    .fold(Program::default, |mut acc, item| {
+    .fold(Module::default, |mut acc, item| {
         match item {
             Item::TypeDef(type_def) => {
                 acc.type_defs.push(type_def);
@@ -301,7 +301,7 @@ pub fn set_miette_hook() {
     }));
 }
 
-pub fn parse_program(input: &str) -> std::result::Result<Program<Expression>, SyntaxError> {
+pub fn parse_program(input: &str) -> std::result::Result<Module<Expression>, SyntaxError> {
     let tokens = lex(&input);
     let e = match program(Input::new(&tokens)) {
         Ok(x) => return Ok(x),
@@ -464,7 +464,7 @@ fn typ_send(input: &mut Input) -> Result<Type> {
         .map(|(open, (args, _, then))| {
             let span = open.span.join(then.span());
             args.into_iter().rfold(then, |then, arg| {
-                Type::Send(span, Box::new(arg), Box::new(then))
+                Type::Pair(span, Box::new(arg), Box::new(then))
             })
         })
         .parse_next(input)
@@ -475,7 +475,7 @@ fn typ_receive(input: &mut Input) -> Result<Type> {
         .map(|(open, (args, _, then))| {
             let span = open.span.join(then.span());
             args.into_iter().rfold(then, |then, arg| {
-                Type::Receive(span, Box::new(arg), Box::new(then))
+                Type::Function(span, Box::new(arg), Box::new(then))
             })
         })
         .parse_next(input)
@@ -562,9 +562,9 @@ fn typ_send_type<'s>(input: &mut Input) -> Result<Type> {
     )
     .map(|((open, _), (names, _, then))| {
         let span = open.span.join(then.span());
-        names.into_iter().rfold(then, |then, name| {
-            Type::SendType(span, name, Box::new(then))
-        })
+        names
+            .into_iter()
+            .rfold(then, |then, name| Type::Exists(span, name, Box::new(then)))
     })
     .parse_next(input)
 }
@@ -580,9 +580,9 @@ fn typ_recv_type(input: &mut Input) -> Result<Type> {
     )
     .map(|((open, _), (names, _, then))| {
         let span = open.span.join(then.span());
-        names.into_iter().rfold(then, |then, name| {
-            Type::ReceiveType(span, name, Box::new(then))
-        })
+        names
+            .into_iter()
+            .rfold(then, |then, name| Type::Forall(span, name, Box::new(then)))
     })
     .parse_next(input)
 }
@@ -620,7 +620,7 @@ fn typ_branch_receive(input: &mut Input) -> Result<Type> {
     .map(|(open, (args, _, then))| {
         let span = open.span.join(then.span());
         args.into_iter().rfold(then, |then, arg| {
-            Type::Receive(span, Box::new(arg), Box::new(then))
+            Type::Function(span, Box::new(arg), Box::new(then))
         })
     })
     .parse_next(input)
@@ -633,9 +633,9 @@ fn typ_branch_recv_type(input: &mut Input) -> Result<Type> {
     )
         .map(|((open, _), (names, _, then))| {
             let span = open.span.join(then.span());
-            names.into_iter().rfold(then, |then, name| {
-                Type::ReceiveType(span, name, Box::new(then))
-            })
+            names
+                .into_iter()
+                .rfold(then, |then, name| Type::Forall(span, name, Box::new(then)))
         })
         .parse_next(input)
 }

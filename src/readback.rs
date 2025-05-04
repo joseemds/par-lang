@@ -1,5 +1,5 @@
 use crate::icombs::{
-    readback::{Handle, Readback},
+    readback::{TypedHandle, TypedReadback},
     Net,
 };
 use core::fmt::Debug;
@@ -57,7 +57,7 @@ impl Element {
     pub fn new(
         refresh: Arc<dyn Fn() + Send + Sync>,
         spawner: Arc<dyn Spawn + Send + Sync>,
-        handle: Handle,
+        handle: TypedHandle,
     ) -> Arc<Mutex<Self>> {
         let element = Arc::new(Mutex::new(Self {
             history: vec![],
@@ -204,28 +204,28 @@ impl Element {
 async fn handle_coroutine(
     refresh: Arc<dyn Fn() + Send + Sync>,
     spawner: Arc<dyn Spawn + Send + Sync>,
-    handle: Handle,
+    handle: TypedHandle,
     element: Arc<Mutex<Element>>,
 ) {
     let mut handle = handle;
 
     loop {
         match handle.readback().await {
-            Readback::Int(value) => {
+            TypedReadback::Int(value) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Int(value));
                 refresh();
                 break;
             }
 
-            Readback::IntRequest(callback) => {
+            TypedReadback::IntRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.request = Some(Request::Int(callback));
                 refresh();
                 break;
             }
 
-            Readback::Times(handle1, handle2) => {
+            TypedReadback::Times(handle1, handle2) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Times(Element::new(
                     Arc::clone(&refresh),
@@ -236,7 +236,7 @@ async fn handle_coroutine(
                 refresh();
             }
 
-            Readback::Par(handle1, handle2) => {
+            TypedReadback::Par(handle1, handle2) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Par(Element::new(
                     Arc::clone(&refresh),
@@ -247,14 +247,14 @@ async fn handle_coroutine(
                 refresh();
             }
 
-            Readback::Either(signal, handle1) => {
+            TypedReadback::Either(signal, handle1) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Either(signal));
                 handle = handle1;
                 refresh();
             }
 
-            Readback::Choice(signals, callback) => {
+            TypedReadback::Choice(signals, callback) => {
                 let rx = {
                     let (tx, rx) = oneshot::channel();
                     let mut lock = element.lock().expect("lock failed");
@@ -271,14 +271,14 @@ async fn handle_coroutine(
                 refresh();
             }
 
-            Readback::Break => {
+            TypedReadback::Break => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Break);
                 refresh();
                 break;
             }
 
-            Readback::Continue => {
+            TypedReadback::Continue => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Continue);
                 refresh();

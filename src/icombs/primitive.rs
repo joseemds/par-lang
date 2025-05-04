@@ -3,7 +3,6 @@ use super::{Net, Tree};
 #[derive(Debug, Clone)]
 pub enum PrimitiveComb {
     Int(i128),
-    IntAdd1,
 }
 
 impl PrimitiveComb {
@@ -22,16 +21,6 @@ impl PrimitiveComb {
                 net.link(Tree::Primitive(Self::Int(i)), *b);
                 net.rewrites.commute += 1;
             }
-
-            (Self::IntAdd1, Tree::Con(arg, res)) => match arg.as_ref() {
-                Tree::Var(_) => {
-                    net.link(Tree::Primitive(Self::IntAdd1), Tree::Con(arg, res));
-                }
-                Tree::Primitive(Self::Int(i)) => {
-                    net.link(Tree::Primitive(Self::Int(i + 1)), *res);
-                }
-                _ => unreachable!("Invalid interaction with a primitive"),
-            },
 
             _ => unreachable!("Invalid interaction with a primitive"),
         }

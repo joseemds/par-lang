@@ -2,7 +2,9 @@
 //! It is not performant; it's mainly here to act as a storage and interchange format
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use futures::channel::{mpsc, oneshot};
@@ -10,6 +12,7 @@ use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
 use indexmap::IndexMap;
 
+use super::readback::Handle;
 use super::PrimitiveComb;
 
 pub type VarId = usize;
@@ -40,6 +43,7 @@ pub enum Tree {
     Primitive(PrimitiveComb),
     SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
     IntRequest(oneshot::Sender<i128>),
+    External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
 }
 
 impl Tree {
@@ -79,7 +83,8 @@ impl Tree {
             | Self::Package(_)
             | Self::Primitive(_)
             | Self::SignalRequest(_)
-            | Self::IntRequest(_) => {}
+            | Self::IntRequest(_)
+            | Self::External(_) => {}
         }
     }
 }
@@ -106,6 +111,7 @@ impl core::fmt::Debug for Tree {
             Self::Primitive(p) => f.debug_tuple("Primitive").field(p).finish(),
             Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
+            Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
         }
     }
 }
@@ -123,6 +129,7 @@ impl Clone for Tree {
             Self::Primitive(p) => Self::Primitive(p.clone()),
             Self::SignalRequest(_) => panic!("cannot clone Tree::RespondSignal"),
             Self::IntRequest(_) => panic!("cannot clone Tree::RespondInt"),
+            Self::External(f) => Self::External(*f),
         }
     }
 }
@@ -184,11 +191,14 @@ pub struct Net {
     pub variables: Variables,
     pub packages: Arc<IndexMap<usize, Net>>,
     pub rewrites: Rewrites,
+    waiting_for_reducer: Vec<(Tree, Tree)>,
     reducer: Option<Reducer>,
 }
 
 #[derive(Clone)]
 struct Reducer {
+    net: Weak<Mutex<Net>>,
+    spawner: Arc<dyn Spawn + Send + Sync>,
     notify: mpsc::UnboundedSender<()>,
 }
 
@@ -240,15 +250,21 @@ impl Variables {
 }
 
 impl Net {
-    pub fn start_reducer(mut self, spawner: impl Spawn + Send + Sync) -> Arc<Mutex<Self>> {
+    pub fn start_reducer(mut self, spawner: Arc<dyn Spawn + Send + Sync>) -> Arc<Mutex<Self>> {
         if self.reducer.is_some() {
             panic!("reducer already started");
         }
 
-        let (notify, resume) = mpsc::unbounded();
-        self.reducer = Some(Reducer { notify });
+        self.redexes.extend(self.waiting_for_reducer.drain(..));
 
+        let (notify, resume) = mpsc::unbounded();
         let net = Arc::new(Mutex::new(self));
+        let weak_net = Arc::downgrade(&net);
+        net.lock().unwrap().reducer = Some(Reducer {
+            net: weak_net,
+            spawner: Arc::clone(&spawner),
+            notify,
+        });
         {
             let net = Arc::clone(&net);
             let mut resume = Box::pin(resume);
@@ -267,7 +283,6 @@ impl Net {
                 })
                 .expect("spawn failed");
         }
-
         net
     }
 
@@ -355,6 +370,19 @@ impl Net {
                 tx.send((index, size, payload)).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
+            (External(f), a) | (a, External(f)) => match &self.reducer {
+                Some(reducer) => {
+                    if let Some(net) = reducer.net.upgrade() {
+                        reducer
+                            .spawner
+                            .spawn(f(Handle::new(net, a)))
+                            .expect("spawn failed");
+                    }
+                }
+                None => {
+                    self.waiting_for_reducer.push((External(f), a));
+                }
+            },
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
         }
     }
@@ -376,6 +404,12 @@ impl Net {
         // Now, we have to freshen all variables in the tree
         net.offset_variables(self.variables.vars.len());
         self.redexes.append(&mut net.redexes);
+        if self.reducer.is_some() {
+            self.redexes.extend(net.waiting_for_reducer.drain(..));
+        } else {
+            self.waiting_for_reducer
+                .append(&mut net.waiting_for_reducer);
+        }
         self.variables.vars.append(&mut net.variables.vars);
         self.variables.free.append(&mut net.variables.free);
         self.rewrites = core::mem::take(&mut self.rewrites) + net.rewrites;
@@ -423,7 +457,8 @@ impl Net {
             | Tree::Package(_)
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
-            | Tree::IntRequest(_) => {}
+            | Tree::IntRequest(_)
+            | Tree::External(_) => {}
         }
     }
 
@@ -462,6 +497,10 @@ impl Net {
             port.map_vars(m);
         }
         for (a, b) in &mut self.redexes {
+            a.map_vars(m);
+            b.map_vars(m);
+        }
+        for (a, b) in &mut self.waiting_for_reducer {
             a.map_vars(m);
             b.map_vars(m);
         }
@@ -520,10 +559,10 @@ impl Net {
             Tree::Package(id) => format!("@{}", id),
 
             Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
-            Tree::Primitive(PrimitiveComb::IntAdd1) => format!("{{Int.add1}}"),
 
             Tree::SignalRequest(_) => format!("<respond_signal>"),
             Tree::IntRequest(_) => format!("<respond_int>"),
+            Tree::External(_) => format!("<external>"),
         }
     }
 
@@ -559,7 +598,8 @@ impl Net {
             | Tree::Package(_)
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
-            | Tree::IntRequest(_) => {}
+            | Tree::IntRequest(_)
+            | Tree::External(_) => {}
         }
     }
 
@@ -568,6 +608,10 @@ impl Net {
 
         let mut vars = vec![];
         for (a, b) in &self.redexes {
+            vars.append(&mut self.assert_tree_valid(a));
+            vars.append(&mut self.assert_tree_valid(b));
+        }
+        for (a, b) in &self.waiting_for_reducer {
             vars.append(&mut self.assert_tree_valid(a));
             vars.append(&mut self.assert_tree_valid(b));
         }
@@ -630,6 +674,7 @@ impl Net {
             Tree::Primitive(_) => vec![],
             Tree::SignalRequest(_) => vec![],
             Tree::IntRequest(_) => vec![],
+            Tree::External(_) => vec![],
         }
     }
 }
