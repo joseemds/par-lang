@@ -18,7 +18,10 @@ pub struct TypedHandle {
 }
 
 pub enum TypedReadback {
+    Nat(i128),
     Int(i128),
+
+    NatRequest(Box<dyn Send + FnOnce(i128)>),
     IntRequest(Box<dyn Send + FnOnce(i128)>),
 
     Times(TypedHandle, TypedHandle),
@@ -33,6 +36,26 @@ pub enum TypedReadback {
 impl Handle {
     pub fn new(net: Arc<Mutex<Net>>, tree: Tree) -> Self {
         Self { net, tree }
+    }
+
+    pub async fn nat(self) -> i128 {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree);
+            locked.notify_reducer();
+            rx
+        };
+        let value = rx.await.expect("sender dropped");
+        assert!(value >= 0);
+        value
+    }
+
+    pub async fn provide_nat(self, value: i128) {
+        assert!(value >= 0);
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree);
+        locked.notify_reducer();
     }
 
     pub async fn int(self) -> i128 {
@@ -156,9 +179,13 @@ impl TypedHandle {
         self.prepare_for_readback();
 
         match &self.tree.ty {
+            Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.int().await),
             Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
 
             typ @ Type::Chan(_, dual) => match dual.as_ref() {
+                Type::Primitive(_, PrimitiveType::Nat) => {
+                    TypedReadback::NatRequest(Box::new(move |value| self.provide_nat(value)))
+                }
                 Type::Primitive(_, PrimitiveType::Int) => {
                     TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
                 }
@@ -200,9 +227,47 @@ impl TypedHandle {
         }
     }
 
+    pub async fn nat(mut self) -> i128 {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::Nat) = self.tree.ty else {
+            panic!("Incorrect type for `nat`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::IntRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        let value = rx.await.expect("sender dropped");
+        assert!(value >= 0);
+        value
+    }
+
+    pub fn provide_nat(mut self, value: i128) {
+        assert!(value >= 0);
+
+        self.prepare_for_readback();
+        let Type::Chan(span, dual) = self.tree.ty else {
+            panic!("Incorrect type for `provide_nat`: {:?}", self.tree.ty);
+        };
+        let Type::Primitive(_, PrimitiveType::Nat | PrimitiveType::Int) = *dual else {
+            panic!(
+                "Incorrect type for `provide_nat`: {:?}",
+                Type::Chan(span, dual)
+            );
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
     pub async fn int(mut self) -> i128 {
         self.prepare_for_readback();
-        let Type::Primitive(_, PrimitiveType::Int) = self.tree.ty else {
+        let Type::Primitive(_, PrimitiveType::Int | PrimitiveType::Nat) = self.tree.ty else {
             panic!("Incorrect type for `int`: {:?}", self.tree.ty);
         };
 
@@ -220,10 +285,13 @@ impl TypedHandle {
     pub fn provide_int(mut self, value: i128) {
         self.prepare_for_readback();
         let Type::Chan(span, dual) = self.tree.ty else {
-            panic!("Incorrect type for `int`: {:?}", self.tree.ty);
+            panic!("Incorrect type for `provide_int`: {:?}", self.tree.ty);
         };
         let Type::Primitive(_, PrimitiveType::Int) = *dual else {
-            panic!("Incorrect type for `int`: {:?}", Type::Chan(span, dual));
+            panic!(
+                "Incorrect type for `provide_int`: {:?}",
+                Type::Chan(span, dual)
+            );
         };
 
         let mut locked = self.net.lock().expect("lock failed");

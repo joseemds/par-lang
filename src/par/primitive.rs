@@ -1,6 +1,6 @@
 use std::fmt::{self, Write};
 
-use super::types::{PrimitiveType, Type};
+use super::types::Type;
 
 #[derive(Clone, Debug)]
 pub enum Primitive {
@@ -16,7 +16,8 @@ impl Primitive {
 
     pub fn get_type(&self) -> Type {
         match self {
-            Self::Int(_) => Type::Primitive(Default::default(), PrimitiveType::Int),
+            Self::Int(n) if *n >= 0 => Type::nat(),
+            Self::Int(_) => Type::int(),
         }
     }
 }

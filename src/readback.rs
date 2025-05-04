@@ -11,6 +11,7 @@ use futures::{
 use std::sync::{Arc, Mutex};
 
 enum Request {
+    Nat(String, Box<dyn Send + FnOnce(i128)>),
     Int(String, Box<dyn Send + FnOnce(i128)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
@@ -22,6 +23,8 @@ pub enum Event {
     Choice(String),
     Break,
     Continue,
+    Nat(i128),
+    NatRequest(i128),
     Int(i128),
     IntRequest(i128),
 }
@@ -41,6 +44,8 @@ impl Event {
             Self::Choice(_) => Polarity::Negative,
             Self::Break => Polarity::Positive,
             Self::Continue => Polarity::Negative,
+            Self::Nat(_) => Polarity::Positive,
+            Self::NatRequest(_) => Polarity::Negative,
             Self::Int(_) => Polarity::Positive,
             Self::IntRequest(_) => Polarity::Negative,
         }
@@ -118,11 +123,38 @@ impl Element {
 
                     if let Some(request) = self.request.take() {
                         match request {
+                            Request::Nat(mut input, callback) => {
+                                let input_number = i128::from_str_radix(&input, 10).ok();
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a natural number..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_number.is_some() && input_number.unwrap() >= 0,
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_number.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let number = input_number.unwrap();
+                                    self.history.push(Event::NatRequest(number));
+                                    callback(number);
+                                } else {
+                                    self.request = Some(Request::Nat(input, callback));
+                                }
+                            }
+
                             Request::Int(mut input, callback) => {
                                 let input_number = i128::from_str_radix(&input, 10).ok();
                                 let entered = ui
                                     .horizontal(|ui| {
-                                        ui.add(egui::TextEdit::singleline(&mut input).hint_text("Type an integer..."));
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type an integer..."),
+                                        );
                                         let button = ui.add_enabled(
                                             input_number.is_some(),
                                             egui::Button::small(egui::Button::new("OK")),
@@ -205,6 +237,9 @@ impl Element {
                     Event::Break | Event::Continue => {
                         ui.label(RichText::from("!").strong().code());
                     }
+                    Event::Nat(i) | Event::NatRequest(i) => {
+                        ui.label(RichText::from(format!("{}", i)).strong().code());
+                    }
                     Event::Int(i) | Event::IntRequest(i) => {
                         ui.label(RichText::from(format!("{}", i)).strong().code());
                     }
@@ -227,6 +262,20 @@ async fn handle_coroutine(
 
     loop {
         match handle.readback().await {
+            TypedReadback::Nat(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Nat(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::NatRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Nat(String::new(), callback));
+                refresh();
+                break;
+            }
+
             TypedReadback::Int(value) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.history.push(Event::Int(value));

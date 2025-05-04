@@ -98,10 +98,15 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrimitiveType {
+    Nat,
     Int,
 }
 
 impl Type {
+    pub fn nat() -> Self {
+        Self::Primitive(Default::default(), PrimitiveType::Nat)
+    }
+
     pub fn int() -> Self {
         Self::Primitive(Default::default(), PrimitiveType::Int)
     }
@@ -582,6 +587,9 @@ impl Type {
         ind: &HashSet<(Option<LocalName>, Option<LocalName>)>,
     ) -> Result<bool, TypeError> {
         Ok(match (self, other) {
+            (Self::Primitive(_, PrimitiveType::Nat), Self::Primitive(_, PrimitiveType::Int)) => {
+                true
+            }
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
 
             (Self::Chan(_, dual_t1), Self::Chan(_, dual_t2)) => {
@@ -2342,22 +2350,6 @@ impl Context {
     }
 }
 
-impl TypeDefs {
-    pub fn quality(&mut self, module: &str) {
-        let mut globals = IndexMap::new();
-        for (name, (span, args, typ)) in self.globals.iter() {
-            let mut name = name.clone();
-            let span = span.clone();
-            let args = args.clone();
-            let mut typ = typ.clone();
-            name.qualify(module);
-            typ.qualify(module);
-            globals.insert(name, (span, args, typ));
-        }
-        self.globals = Arc::new(globals);
-    }
-}
-
 impl Type {
     pub fn qualify(&mut self, module: &str) {
         match self {
@@ -2408,6 +2400,7 @@ impl Type {
 
     pub fn pretty(&self, f: &mut impl Write, indent: usize) -> fmt::Result {
         match self {
+            Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
 
             Self::Chan(_, body) => {
@@ -2539,6 +2532,7 @@ impl Type {
 
     pub fn pretty_compact(&self, f: &mut impl Write) -> fmt::Result {
         match self {
+            Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
 
             Self::Chan(_, body) => {
