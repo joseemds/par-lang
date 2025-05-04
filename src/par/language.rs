@@ -22,6 +22,16 @@ pub struct GlobalName {
     pub primary: String,
 }
 
+impl GlobalName {
+    pub fn external(module: Option<&'static str>, primary: &'static str) -> Self {
+        GlobalName {
+            span: Default::default(),
+            module: module.map(String::from),
+            primary: String::from(primary),
+        }
+    }
+}
+
 impl Spanning for LocalName {
     fn span(&self) -> Span {
         self.span.clone()

@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use indexmap::IndexMap;
 
-use crate::location::Span;
+use crate::{icombs::readback::Handle, location::Span};
 
 use super::{
     language::{GlobalName, LocalName},
@@ -44,6 +44,41 @@ pub struct Definition<Expr> {
     pub span: Span,
     pub name: GlobalName,
     pub expression: Expr,
+}
+
+impl TypeDef {
+    pub fn external(name: &'static str, typ: Type) -> Self {
+        Self {
+            span: Default::default(),
+            name: GlobalName::external(None, name),
+            params: vec![],
+            typ,
+        }
+    }
+}
+
+impl Declaration {
+    pub fn external(name: &'static str, typ: Type) -> Self {
+        Self {
+            span: Default::default(),
+            name: GlobalName::external(None, name),
+            typ,
+        }
+    }
+}
+
+impl Definition<Arc<process::Expression<()>>> {
+    pub fn external(
+        name: &'static str,
+        typ: Type,
+        f: fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>,
+    ) -> Self {
+        Self {
+            span: Default::default(),
+            name: GlobalName::external(None, name),
+            expression: Arc::new(process::Expression::External(typ, f, ())),
+        }
+    }
 }
 
 impl Module<Arc<process::Expression<()>>> {

@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use super::{
-    language::GlobalName,
     process,
     program::{Definition, Module, TypeDef},
-    types::{PrimitiveType, Type},
+    types::Type,
 };
 
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
@@ -13,44 +12,19 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
 
 pub fn int_module() -> Module<Arc<process::Expression<()>>> {
     Module {
-        type_defs: vec![TypeDef {
-            span: Default::default(),
-            name: GlobalName {
-                span: Default::default(),
-                module: None,
-                primary: String::from("Int"),
-            },
-            params: vec![],
-            typ: Type::Primitive(Default::default(), PrimitiveType::Int),
-        }],
+        type_defs: vec![TypeDef::external("Int", Type::int())],
         declarations: vec![],
-        definitions: vec![Definition {
-            span: Default::default(),
-            name: GlobalName {
-                span: Default::default(),
-                module: None,
-                primary: String::from("Add"),
+        definitions: vec![Definition::external(
+            "Add",
+            Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+            |handle| {
+                Box::pin(async move {
+                    let (x, handle) = handle.receive();
+                    let (y, handle) = handle.receive();
+                    let (x, y) = (x.int().await, y.int().await);
+                    handle.provide_int(x + y);
+                })
             },
-            expression: Arc::new(process::Expression::External(
-                Type::Function(
-                    Default::default(),
-                    Box::new(Type::Primitive(Default::default(), PrimitiveType::Int)),
-                    Box::new(Type::Function(
-                        Default::default(),
-                        Box::new(Type::Primitive(Default::default(), PrimitiveType::Int)),
-                        Box::new(Type::Primitive(Default::default(), PrimitiveType::Int)),
-                    )),
-                ),
-                |handle| {
-                    Box::pin(async move {
-                        let (x, handle) = handle.receive();
-                        let (y, handle) = handle.receive();
-                        let (x, y) = (x.int().await, y.int().await);
-                        handle.provide_int(x + y);
-                    })
-                },
-                (),
-            )),
-        }],
+        )],
     }
 }

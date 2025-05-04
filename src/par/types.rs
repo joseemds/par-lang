@@ -64,7 +64,7 @@ pub enum Type {
     /// type variable
     Var(Span, LocalName),
     /// named type
-    Name(Span, GlobalName, Vec<Type>),
+    Name(Span, GlobalName, Vec<Self>),
     Pair(Span, Box<Self>, Box<Self>),
     Function(Span, Box<Self>, Box<Self>),
     Either(Span, BTreeMap<LocalName, Self>),
@@ -99,6 +99,106 @@ pub enum Type {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrimitiveType {
     Int,
+}
+
+impl Type {
+    pub fn int() -> Self {
+        Self::Primitive(Default::default(), PrimitiveType::Int)
+    }
+
+    pub fn chan(t: Self) -> Self {
+        Self::Chan(Default::default(), Box::new(t))
+    }
+
+    pub fn name(name: GlobalName, args: Vec<Self>) -> Self {
+        Self::Name(Default::default(), name, args)
+    }
+
+    pub fn pair(t: Self, u: Self) -> Self {
+        Self::Pair(Default::default(), Box::new(t), Box::new(u))
+    }
+
+    pub fn function(t: Self, u: Self) -> Self {
+        Self::Function(Default::default(), Box::new(t), Box::new(u))
+    }
+
+    pub fn either(branches: Vec<(&'static str, Self)>) -> Self {
+        Self::Either(
+            Default::default(),
+            branches
+                .into_iter()
+                .map(|(name, typ)| {
+                    (
+                        LocalName {
+                            span: Default::default(),
+                            string: String::from(name),
+                        },
+                        typ,
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    pub fn choice(branches: Vec<(&'static str, Self)>) -> Self {
+        Self::Choice(
+            Default::default(),
+            branches
+                .into_iter()
+                .map(|(name, typ)| {
+                    (
+                        LocalName {
+                            span: Default::default(),
+                            string: String::from(name),
+                        },
+                        typ,
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    pub fn break_() -> Self {
+        Self::Break(Default::default())
+    }
+
+    pub fn continue_() -> Self {
+        Self::Continue(Default::default())
+    }
+
+    pub fn recursive(label: Option<&'static str>, body: Self) -> Self {
+        Self::Recursive {
+            span: Default::default(),
+            asc: IndexSet::new(),
+            label: label.map(|label| LocalName {
+                span: Default::default(),
+                string: String::from(label),
+            }),
+            body: Box::new(body),
+        }
+    }
+
+    pub fn iterative(label: Option<&'static str>, body: Self) -> Self {
+        Self::Iterative {
+            span: Default::default(),
+            asc: IndexSet::new(),
+            label: label.map(|label| LocalName {
+                span: Default::default(),
+                string: String::from(label),
+            }),
+            body: Box::new(body),
+        }
+    }
+
+    pub fn self_(label: Option<&'static str>) -> Self {
+        Self::Self_(
+            Default::default(),
+            label.map(|label| LocalName {
+                span: Default::default(),
+                string: String::from(label),
+            }),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
