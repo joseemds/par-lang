@@ -194,7 +194,7 @@ impl TypeOnHover {
 
 impl TypeOnHover {
     pub fn query(&self, row: usize, column: usize) -> Option<NameWithType> {
-        if self.sorted_pairs.len() == 0 {
+        if self.sorted_pairs.is_empty() {
             return None;
         }
 
