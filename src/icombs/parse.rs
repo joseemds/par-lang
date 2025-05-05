@@ -37,15 +37,15 @@ impl State {
                 let mut pairs = pair.into_inner();
                 let a = self.parse_tree(&mut pairs);
                 let b = self.parse_tree(&mut pairs);
-                Tree::c(a, b)
+                Tree::Con(Box::new(a), Box::new(b))
             }
             Rule::dup_tree => {
                 let mut pairs = pair.into_inner();
                 let a = self.parse_tree(&mut pairs);
                 let b = self.parse_tree(&mut pairs);
-                Tree::c(a, b)
+                Tree::Con(Box::new(a), Box::new(b))
             }
-            Rule::era_tree => Tree::e(),
+            Rule::era_tree => Tree::Era,
             Rule::var_tree => {
                 let pair = pair.into_inner().next().unwrap();
                 self.create_var(pair.as_str())

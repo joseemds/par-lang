@@ -14,8 +14,7 @@ use crate::par::{
 };
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
-use std::collections::BTreeMap;
-use winnow::token::literal;
+use std::{collections::BTreeMap, sync::Arc};
 use winnow::{
     combinator::{alt, cut_err, opt, preceded, repeat, separated, terminated, trace},
     error::{
@@ -24,6 +23,7 @@ use winnow::{
     stream::{Accumulate, Stream},
     Parser,
 };
+use winnow::{error::InputError, token::literal};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MyError<C = StrContext> {
@@ -709,7 +709,7 @@ fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
 
 fn expression(input: &mut Input) -> Result<Expression> {
     alt((
-        expr_literal_int,
+        expr_literal,
         expr_let,
         expr_do,
         expr_fork,
@@ -727,11 +727,25 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
         .parse_next(input)
 }
 
+fn expr_literal(input: &mut Input) -> Result<Expression> {
+    alt((expr_literal_int, expr_literal_string)).parse_next(input)
+}
+
 fn expr_literal_int(input: &mut Input) -> Result<Expression> {
     t(TokenKind::Integer)
         .map(|token| {
             let i = i128::from_str_radix(token.raw, 10).expect("invalid integer literal");
             Expression::Primitive(token.span, Primitive::Int(i))
+        })
+        .parse_next(input)
+}
+
+fn expr_literal_string(input: &mut Input) -> Result<Expression> {
+    t(TokenKind::String)
+        .map(|token| {
+            //FIXME crashes here, shouldn't crash
+            let lit: syn::LitStr = syn::parse_str(token.raw).expect("invalid string literal");
+            Expression::Primitive(token.span, Primitive::String(Arc::from(lit.value())))
         })
         .parse_next(input)
 }
@@ -821,10 +835,17 @@ fn construction(input: &mut Input) -> Result<Construct> {
 }
 
 fn cons_then(input: &mut Input) -> Result<Construct> {
-    alt((expr_fork, expr_let, expr_do, application, expr_grouped))
-        .map(Box::new)
-        .map(Construct::Then)
-        .parse_next(input)
+    alt((
+        expr_literal_int,
+        expr_fork,
+        expr_let,
+        expr_do,
+        application,
+        expr_grouped,
+    ))
+    .map(Box::new)
+    .map(Construct::Then)
+    .parse_next(input)
 }
 
 fn cons_send(input: &mut Input) -> Result<Construct> {
@@ -1068,7 +1089,7 @@ fn apply_begin(input: &mut Input) -> Result<Apply> {
         };
         Apply::Begin {
             span: pre.span.join(then.span()),
-            unfounded: true,
+            unfounded: false,
             label,
             then: Box::new(then),
         }

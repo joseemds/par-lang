@@ -43,25 +43,11 @@ pub enum Tree {
     Primitive(PrimitiveComb),
     SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
     IntRequest(oneshot::Sender<i128>),
+    StringRequest(oneshot::Sender<Arc<str>>),
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
 }
 
 impl Tree {
-    /// Construct a CON node
-    pub fn c(a: Tree, b: Tree) -> Tree {
-        Tree::Con(Box::new(a), Box::new(b))
-    }
-
-    /// Construct a DUP node
-    pub fn d(a: Tree, b: Tree) -> Tree {
-        Tree::Dup(Box::new(a), Box::new(b))
-    }
-
-    /// Construct an ERA node
-    pub fn e() -> Tree {
-        Tree::Era
-    }
-
     pub fn map_vars(&mut self, m: &mut impl FnMut(VarId) -> VarId) {
         match self {
             Self::Var(x) => *x = m(*x),
@@ -84,6 +70,7 @@ impl Tree {
             | Self::Primitive(_)
             | Self::SignalRequest(_)
             | Self::IntRequest(_)
+            | Self::StringRequest(_)
             | Self::External(_) => {}
         }
     }
@@ -111,6 +98,7 @@ impl core::fmt::Debug for Tree {
             Self::Primitive(p) => f.debug_tuple("Primitive").field(p).finish(),
             Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
+            Self::StringRequest(_) => f.debug_tuple("StringRequest").field(&"<channel>").finish(),
             Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
         }
     }
@@ -127,8 +115,9 @@ impl Clone for Tree {
             Self::Var(id) => Self::Var(id.clone()),
             Self::Package(id) => Self::Package(id.clone()),
             Self::Primitive(p) => Self::Primitive(p.clone()),
-            Self::SignalRequest(_) => panic!("cannot clone Tree::RespondSignal"),
-            Self::IntRequest(_) => panic!("cannot clone Tree::RespondInt"),
+            Self::SignalRequest(_) => panic!("cannot clone Tree::SignalRequest"),
+            Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
+            Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
             Self::External(f) => Self::External(*f),
         }
     }
@@ -458,6 +447,7 @@ impl Net {
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
+            | Tree::StringRequest(_)
             | Tree::External(_) => {}
         }
     }
@@ -559,9 +549,11 @@ impl Net {
             Tree::Package(id) => format!("@{}", id),
 
             Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
+            Tree::Primitive(PrimitiveComb::String(s)) => format!("{{{:?}}}", s),
 
-            Tree::SignalRequest(_) => format!("<respond_signal>"),
-            Tree::IntRequest(_) => format!("<respond_int>"),
+            Tree::SignalRequest(_) => format!("<signal request>"),
+            Tree::IntRequest(_) => format!("<int request>"),
+            Tree::StringRequest(_) => format!("<string request>"),
             Tree::External(_) => format!("<external>"),
         }
     }
@@ -599,6 +591,7 @@ impl Net {
             | Tree::Primitive(_)
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
+            | Tree::StringRequest(_)
             | Tree::External(_) => {}
         }
     }
@@ -674,6 +667,7 @@ impl Net {
             Tree::Primitive(_) => vec![],
             Tree::SignalRequest(_) => vec![],
             Tree::IntRequest(_) => vec![],
+            Tree::StringRequest(_) => vec![],
             Tree::External(_) => vec![],
         }
     }

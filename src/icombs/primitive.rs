@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use super::{Net, Tree};
 
 #[derive(Debug, Clone)]
 pub enum PrimitiveComb {
     Int(i128),
+    String(Arc<str>),
 }
 
 impl PrimitiveComb {
@@ -12,13 +15,17 @@ impl PrimitiveComb {
                 c.send(i).expect("receiver dropped");
                 net.rewrites.resp += 1;
             }
+            (Self::String(s), Tree::StringRequest(c)) => {
+                c.send(s).expect("receiver dropped");
+                net.rewrites.resp += 1;
+            }
 
-            (Self::Int(_), Tree::Era) => {
+            (_, Tree::Era) => {
                 net.rewrites.era += 1;
             }
-            (Self::Int(i), Tree::Dup(a, b)) => {
-                net.link(Tree::Primitive(Self::Int(i)), *a);
-                net.link(Tree::Primitive(Self::Int(i)), *b);
+            (p, Tree::Dup(a, b)) => {
+                net.link(Tree::Primitive(p.clone()), *a);
+                net.link(Tree::Primitive(p), *b);
                 net.rewrites.commute += 1;
             }
 

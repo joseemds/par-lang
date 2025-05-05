@@ -1,16 +1,21 @@
-use std::fmt::{self, Write};
+use std::{
+    fmt::{self, Write},
+    sync::Arc,
+};
 
 use super::types::Type;
 
 #[derive(Clone, Debug)]
 pub enum Primitive {
     Int(i128),
+    String(Arc<str>),
 }
 
 impl Primitive {
     pub fn pretty(&self, f: &mut impl Write, _indent: usize) -> fmt::Result {
         match self {
             Self::Int(i) => write!(f, "{}", i),
+            Self::String(s) => write!(f, "{:?}", s),
         }
     }
 
@@ -18,6 +23,7 @@ impl Primitive {
         match self {
             Self::Int(n) if *n >= 0 => Type::nat(),
             Self::Int(_) => Type::int(),
+            Self::String(_) => Type::string(),
         }
     }
 }

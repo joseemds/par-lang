@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::{
+    language::GlobalName,
     process,
     program::{Definition, Module, TypeDef},
     types::Type,
@@ -27,7 +28,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 ),
                 Definition::external(
                     "Max",
-                    Type::function(Type::nat(), Type::function(Type::nat(), Type::int())),
+                    Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
                     |handle| {
                         Box::pin(async move {
                             let (x, handle) = handle.receive();
@@ -80,6 +81,52 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                         let (y, handle) = handle.receive();
                         let (x, y) = (x.int().await, y.int().await);
                         handle.provide_int(x + y);
+                    })
+                },
+            )],
+        },
+    );
+
+    module.import(
+        "String",
+        Module {
+            type_defs: vec![
+                TypeDef::external("String", Type::string()),
+                TypeDef::external(
+                    "Builder",
+                    Type::iterative(
+                        None,
+                        Type::choice(vec![
+                            ("add", Type::function(Type::string(), Type::self_(None))),
+                            ("build", Type::string()),
+                        ]),
+                    ),
+                ),
+            ],
+            declarations: vec![],
+            definitions: vec![Definition::external(
+                "Builder",
+                Type::name(GlobalName::external(None, "Builder"), vec![]),
+                |mut handle| {
+                    Box::pin(async move {
+                        let mut buf = String::new();
+                        loop {
+                            let (i, handle1) = handle.case(2).await;
+                            handle = handle1;
+                            match i {
+                                    0 /* add */ => {
+                                        let (s, handle1) = handle.receive();
+                                        handle = handle1;
+                                        let s = s.string().await;
+                                        buf += &s;
+                                    }
+                                    1 /* build */ => {
+                                        handle.provide_string(Arc::from(buf));
+                                        break;
+                                    }
+                                    _ => unreachable!(),
+                                }
+                        }
                     })
                 },
             )],

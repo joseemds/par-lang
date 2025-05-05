@@ -100,6 +100,7 @@ pub enum Type {
 pub enum PrimitiveType {
     Nat,
     Int,
+    String,
 }
 
 impl Type {
@@ -109,6 +110,10 @@ impl Type {
 
     pub fn int() -> Self {
         Self::Primitive(Default::default(), PrimitiveType::Int)
+    }
+
+    pub fn string() -> Self {
+        Self::Primitive(Default::default(), PrimitiveType::String)
     }
 
     pub fn chan(t: Self) -> Self {
@@ -2402,6 +2407,7 @@ impl Type {
         match self {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
+            Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
 
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;
@@ -2534,6 +2540,7 @@ impl Type {
         match self {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
+            Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
 
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;

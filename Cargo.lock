@@ -2555,6 +2555,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stacker",
+ "syn",
  "tokio",
  "tracing",
  "tracing-subscriber",

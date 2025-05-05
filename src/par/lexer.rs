@@ -1,7 +1,7 @@
 use crate::location::{Point, Span};
 use core::str::FromStr;
 use winnow::{
-    combinator::{alt, not, peek, preceded, repeat},
+    combinator::{alt, not, opt, peek, preceded, repeat},
     error::{EmptyError, ParserError},
     stream::{ParseSlice, TokenSlice},
     token::{any, literal, take, take_while},
@@ -30,6 +30,7 @@ pub enum TokenKind {
     Link,
 
     Integer,
+    String,
 
     LowercaseIdentifier,
     UppercaseIdentifier,
@@ -95,6 +96,7 @@ impl TokenKind {
             TokenKind::Link => "<>",
 
             TokenKind::Integer => "integer",
+            TokenKind::String => "string",
 
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
@@ -175,6 +177,19 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                         .take()
                         .parse_next(input)?;
                     Some((raw, TokenKind::Integer))
+                }
+                '"' => {
+                    let raw = (
+                        take(1 as usize),
+                        repeat::<_, _, (), _, _>(
+                            0..,
+                            alt((preceded('\\', any), any.verify(|c| *c != '"'))),
+                        ),
+                        opt('"'),
+                    )
+                        .take()
+                        .parse_next(input)?;
+                    Some((raw, TokenKind::String))
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let raw = take_while(

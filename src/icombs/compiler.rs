@@ -97,7 +97,7 @@ pub struct TypedTree {
 impl Default for TypedTree {
     fn default() -> Self {
         Self {
-            tree: Tree::e(),
+            tree: Tree::Era,
             ty: Type::Break(Span::default()),
         }
     }
@@ -148,7 +148,7 @@ impl Context {
             if let Some(captures) = captures {
                 if let Var::Name(name) = &name {
                     if !captures.names.contains_key(name) {
-                        net.link(tree.tree, Tree::e());
+                        net.link(tree.tree, Tree::Era);
                         continue;
                     }
                 }
@@ -156,7 +156,7 @@ impl Context {
             if let Some(labels_in_scope) = labels_in_scope {
                 if let Var::Loop(label) = &name {
                     if !labels_in_scope.contains(&LoopLabel(label.clone())) {
-                        net.link(tree.tree, Tree::e());
+                        net.link(tree.tree, Tree::Era);
                         continue;
                     }
                 }
@@ -224,12 +224,15 @@ impl Tree {
 
 pub(crate) fn multiplex_trees(mut trees: Vec<Tree>) -> Tree {
     if trees.len() == 0 {
-        Tree::e()
+        Tree::Era
     } else if trees.len() == 1 {
         trees.pop().unwrap()
     } else {
         let new_trees = trees.split_off(trees.len() / 2);
-        Tree::c(multiplex_trees(trees), multiplex_trees(new_trees))
+        Tree::Con(
+            Box::new(multiplex_trees(trees)),
+            Box::new(multiplex_trees(new_trees)),
+        )
     }
 }
 
@@ -391,7 +394,7 @@ impl Compiler {
                 if prev_kind == VariableKind::Linear {
                     return Err(Error::UnusedVar(Span::default()));
                 }
-                self.net.link(prev_tree.tree, Tree::e());
+                self.net.link(prev_tree.tree, Tree::Era);
                 Ok(())
             }
             None => Ok(()),
@@ -408,7 +411,8 @@ impl Compiler {
                 kind => {
                     let (w0, w1) = self.net.create_wire();
                     let (v0, v1) = self.net.create_wire();
-                    self.net.link(Tree::d(v0, w0), tree.tree);
+                    self.net
+                        .link(Tree::Dup(Box::new(v0), Box::new(w0)), tree.tree);
                     self.context.vars.insert(
                         var.clone(),
                         (
@@ -530,6 +534,10 @@ impl Compiler {
                         tree: Tree::Primitive(PrimitiveComb::Int(*i)),
                         ty,
                     }),
+                    Primitive::String(s) => Ok(TypedTree {
+                        tree: Tree::Primitive(PrimitiveComb::String(Arc::clone(s))),
+                        ty,
+                    }),
                 }
             }
 
@@ -616,7 +624,10 @@ impl Compiler {
                 let expr = self.compile_expression(expr)?;
                 let (v0, v1) = self.create_typed_wire(*ret_type);
                 self.bind_variable(name, v0)?;
-                self.net.link(Tree::c(v1.tree, expr.tree), subject.tree);
+                self.net.link(
+                    Tree::Con(Box::new(v1.tree), Box::new(expr.tree)),
+                    subject.tree,
+                );
                 self.compile_process(process)?;
             }
             Command::Receive(target, _, _, process) => {
@@ -634,7 +645,10 @@ impl Compiler {
                 let (w0, w1) = self.create_typed_wire(*ret_type);
                 self.bind_variable(name, w0)?;
                 self.bind_variable(target.clone(), v0)?;
-                self.net.link(Tree::c(w1.tree, v1.tree), subject.tree);
+                self.net.link(
+                    Tree::Con(Box::new(w1.tree), Box::new(v1.tree)),
+                    subject.tree,
+                );
                 self.compile_process(process)?;
             }
             Command::Signal(chosen, process) => {
@@ -669,16 +683,15 @@ impl Compiler {
                     .into_iter()
                     .zip(required_branches.values())
                 {
-                    let (package_id, _) =
-                        self.in_package(|this, _| {
-                            let (w0, w1) = this.create_typed_wire(branch.clone());
-                            this.bind_variable(name.clone(), w0)?;
+                    let (package_id, _) = self.in_package(|this, _| {
+                        let (w0, w1) = this.create_typed_wire(branch.clone());
+                        this.bind_variable(name.clone(), w0)?;
 
-                            let context_out = this.context.unpack(&pack_data, &mut this.net);
-                            this.compile_process(process)?;
-                            Ok(Tree::c(context_out, w1.tree)
-                                .with_type(Type::Break(Default::default())))
-                        })?;
+                        let context_out = this.context.unpack(&pack_data, &mut this.net);
+                        this.compile_process(process)?;
+                        Ok(Tree::Con(Box::new(context_out), Box::new(w1.tree))
+                            .with_type(Type::Break(Default::default())))
+                    })?;
                     branches.push(package_id)
                 }
                 let t = self.choice_instance(context_in, branches);
@@ -690,7 +703,7 @@ impl Compiler {
                 // ==
                 // name = *
                 let a = self.use_variable(&name, true)?.0.tree;
-                self.net.link(a, Tree::e());
+                self.net.link(a, Tree::Era);
                 self.end_context()?;
             }
             Command::Continue(process) => {
@@ -699,7 +712,7 @@ impl Compiler {
                 // name = *
                 // < process >
                 let a = self.use_variable(&name, true)?.0.tree;
-                self.net.link(a, Tree::e());
+                self.net.link(a, Tree::Era);
                 self.compile_process(process)?;
             }
             Command::Begin {
@@ -720,7 +733,7 @@ impl Compiler {
                     ),
                 );
                 if let Some((prev_tree, _)) = prev {
-                    self.net.link(prev_tree.tree, Tree::e());
+                    self.net.link(prev_tree.tree, Tree::Era);
                 }
 
                 let mut labels_in_scope: Vec<_> =
@@ -768,7 +781,7 @@ impl Compiler {
             if kind == VariableKind::Linear {
                 return Err(Error::UnusedVar(Default::default()));
             } else {
-                self.net.link(value.tree, Tree::e());
+                self.net.link(value.tree, Tree::Era);
             }
         }
         self.context.loop_points = Default::default();

@@ -20,9 +20,11 @@ pub struct TypedHandle {
 pub enum TypedReadback {
     Nat(i128),
     Int(i128),
+    String(Arc<str>),
 
     NatRequest(Box<dyn Send + FnOnce(i128)>),
     IntRequest(Box<dyn Send + FnOnce(i128)>),
+    StringRequest(Box<dyn Send + FnOnce(Arc<str>)>),
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
@@ -75,11 +77,28 @@ impl Handle {
         locked.notify_reducer();
     }
 
+    pub async fn string(self) -> Arc<str> {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::StringRequest(tx), self.tree);
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_string(self, value: Arc<str>) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(PrimitiveComb::String(value)), self.tree);
+        locked.notify_reducer();
+    }
+
     pub fn send(self) -> (Self, Self) {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::c(u1, t1), self.tree);
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -99,7 +118,7 @@ impl Handle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::c(u1, t1), self.tree);
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -181,6 +200,7 @@ impl TypedHandle {
         match &self.tree.ty {
             Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.int().await),
             Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
+            Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
 
             typ @ Type::Chan(_, dual) => match dual.as_ref() {
                 Type::Primitive(_, PrimitiveType::Nat) => {
@@ -188,6 +208,9 @@ impl TypedHandle {
                 }
                 Type::Primitive(_, PrimitiveType::Int) => {
                     TypedReadback::IntRequest(Box::new(move |value| self.provide_int(value)))
+                }
+                Type::Primitive(_, PrimitiveType::String) => {
+                    TypedReadback::StringRequest(Box::new(move |value| self.provide_string(value)))
                 }
 
                 _ => panic!("Unsupported dual type for readback: {:?}", typ),
@@ -299,6 +322,43 @@ impl TypedHandle {
         locked.notify_reducer();
     }
 
+    pub async fn string(mut self) -> Arc<str> {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::String) = self.tree.ty else {
+            panic!("Incorrect type for `string`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::StringRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_string(mut self, value: Arc<str>) {
+        self.prepare_for_readback();
+        let Type::Chan(span, dual) = self.tree.ty else {
+            panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
+        };
+        let Type::Primitive(_, PrimitiveType::String) = *dual else {
+            panic!(
+                "Incorrect type for `provide_string`: {:?}",
+                Type::Chan(span, dual)
+            );
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(
+            Tree::Primitive(PrimitiveComb::String(value)),
+            self.tree.tree,
+        );
+        locked.notify_reducer();
+    }
+
     pub fn send(mut self) -> (Self, Self) {
         self.prepare_for_readback();
         let Type::Function(_, t, u) = self.tree.ty else {
@@ -308,7 +368,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::c(u1, t1), self.tree.tree);
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 
@@ -335,7 +395,7 @@ impl TypedHandle {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::c(u1, t1), self.tree.tree);
+        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree.tree);
         locked.notify_reducer();
         drop(locked);
 

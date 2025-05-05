@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(i128)>),
     Int(String, Box<dyn Send + FnOnce(i128)>),
+    String(String, Box<dyn Send + FnOnce(Arc<str>)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
 
@@ -27,6 +28,8 @@ pub enum Event {
     NatRequest(i128),
     Int(i128),
     IntRequest(i128),
+    String(Arc<str>),
+    StringRequest(Arc<str>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +51,8 @@ impl Event {
             Self::NatRequest(_) => Polarity::Negative,
             Self::Int(_) => Polarity::Positive,
             Self::IntRequest(_) => Polarity::Negative,
+            Self::String(_) => Polarity::Positive,
+            Self::StringRequest(_) => Polarity::Negative,
         }
     }
 }
@@ -171,6 +176,26 @@ impl Element {
                                 }
                             }
 
+                            Request::String(mut input, callback) => {
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a string..."),
+                                        );
+                                        ui.add(egui::Button::small(egui::Button::new("OK")))
+                                            .clicked()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let string = Arc::from(input);
+                                    self.history.push(Event::StringRequest(Arc::clone(&string)));
+                                    callback(string);
+                                } else {
+                                    self.request = Some(Request::String(input, callback));
+                                }
+                            }
+
                             Request::Choice(signals, callback) => {
                                 let mut chosen = None;
                                 ui.vertical(|ui| {
@@ -215,10 +240,10 @@ impl Element {
                 if polarity == None {
                     match event.polarity() {
                         Polarity::Positive => {
-                            ui.label(RichText::from("+").code());
+                            ui.label(RichText::from(">").code());
                         }
                         Polarity::Negative => {
-                            ui.label(RichText::from("-").code());
+                            ui.label(RichText::from("<").code());
                         }
                     }
                 }
@@ -242,6 +267,9 @@ impl Element {
                     }
                     Event::Int(i) | Event::IntRequest(i) => {
                         ui.label(RichText::from(format!("{}", i)).strong().code());
+                    }
+                    Event::String(s) | Event::StringRequest(s) => {
+                        ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
                 }
             }
@@ -286,6 +314,20 @@ async fn handle_coroutine(
             TypedReadback::IntRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.request = Some(Request::Int(String::new(), callback));
+                refresh();
+                break;
+            }
+
+            TypedReadback::String(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::String(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::StringRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::String(String::new(), callback));
                 refresh();
                 break;
             }
