@@ -114,22 +114,40 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                             let (i, handle1) = handle.case(2).await;
                             handle = handle1;
                             match i {
-                                    0 /* add */ => {
-                                        let (s, handle1) = handle.receive();
-                                        handle = handle1;
-                                        let s = s.string().await;
-                                        buf += &s;
-                                    }
-                                    1 /* build */ => {
-                                        handle.provide_string(Arc::from(buf));
-                                        break;
-                                    }
-                                    _ => unreachable!(),
+                                0 /* add */ => {
+                                    let (s, handle1) = handle.receive();
+                                    handle = handle1;
+                                    buf += &s.string().await;
                                 }
+                                1 /* build */ => {
+                                    handle.provide_string(Arc::from(buf));
+                                    break;
+                                }
+                                _ => unreachable!(),
+                            }
                         }
                     })
                 },
             )],
         },
     );
+
+    module.import(
+        "Console",
+        Module {
+            type_defs: vec![],
+            declarations: vec![],
+            definitions: vec![Definition::external(
+                "Log",
+                Type::function(Type::string(), Type::break_()),
+                |handle| {
+                    Box::pin(async move {
+                        let (s, handle) = handle.receive();
+                        println!("{}", s.string().await);
+                        handle.break_();
+                    })
+                },
+            )],
+        },
+    )
 }
