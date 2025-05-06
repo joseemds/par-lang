@@ -17,11 +17,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 Definition::external(
                     "Add",
                     Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
-                    |handle| {
+                    |mut handle| {
                         Box::pin(async move {
-                            let (x, handle) = handle.receive();
-                            let (y, handle) = handle.receive();
-                            let (x, y) = (x.int().await, y.int().await);
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
                             handle.provide_int(x + y);
                         })
                     },
@@ -29,11 +28,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 Definition::external(
                     "Max",
                     Type::function(Type::nat(), Type::function(Type::int(), Type::nat())),
-                    |handle| {
+                    |mut handle| {
                         Box::pin(async move {
-                            let (x, handle) = handle.receive();
-                            let (y, handle) = handle.receive();
-                            let (x, y) = (x.nat().await, y.int().await);
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().int().await;
                             handle.provide_int(x.max(y));
                         })
                     },
@@ -50,15 +48,14 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                             ]),
                         ),
                     ),
-                    |handle| {
+                    |mut handle| {
                         Box::pin(async move {
-                            let (n, mut handle) = handle.receive();
-                            let mut n = n.nat().await;
+                            let mut n = handle.receive().nat().await;
                             while n > 0 {
-                                handle = handle.signal(1, 2); // step
+                                handle.signal(1, 2); // step
                                 n -= 1;
                             }
-                            handle = handle.signal(0, 2); // end
+                            handle.signal(0, 2); // end
                             handle.break_();
                         })
                     },
@@ -75,11 +72,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
             definitions: vec![Definition::external(
                 "Add",
                 Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |handle| {
+                |mut handle| {
                     Box::pin(async move {
-                        let (x, handle) = handle.receive();
-                        let (y, handle) = handle.receive();
-                        let (x, y) = (x.int().await, y.int().await);
+                        let x = handle.receive().int().await;
+                        let y = handle.receive().int().await;
                         handle.provide_int(x + y);
                     })
                 },
@@ -111,15 +107,11 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     Box::pin(async move {
                         let mut buf = String::new();
                         loop {
-                            let (i, handle1) = handle.case(2).await;
-                            handle = handle1;
-                            match i {
-                                0 /* add */ => {
-                                    let (s, handle1) = handle.receive();
-                                    handle = handle1;
-                                    buf += &s.string().await;
+                            match handle.case(2).await {
+                                0 => { // add
+                                    buf += &handle.receive().string().await;
                                 }
-                                1 /* build */ => {
+                                1 => { // build
                                     handle.provide_string(Arc::from(buf));
                                     break;
                                 }
@@ -140,10 +132,9 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
             definitions: vec![Definition::external(
                 "Log",
                 Type::function(Type::string(), Type::break_()),
-                |handle| {
+                |mut handle| {
                     Box::pin(async move {
-                        let (s, handle) = handle.receive();
-                        println!("{}", s.string().await);
+                        println!("{}", handle.receive().string().await);
                         handle.break_();
                     })
                 },

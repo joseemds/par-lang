@@ -2,13 +2,16 @@ use std::sync::{Arc, Mutex};
 
 use futures::channel::oneshot;
 
-use crate::par::types::{PrimitiveType, Type, TypeDefs};
+use crate::par::{
+    primitive::Primitive,
+    types::{PrimitiveType, Type, TypeDefs},
+};
 
-use super::{compiler::TypedTree, Net, PrimitiveComb, Tree};
+use super::{compiler::TypedTree, Net, Tree};
 
 pub struct Handle {
     net: Arc<Mutex<Net>>,
-    tree: Tree,
+    tree: Option<Tree>,
 }
 
 pub struct TypedHandle {
@@ -37,14 +40,17 @@ pub enum TypedReadback {
 
 impl Handle {
     pub fn new(net: Arc<Mutex<Net>>, tree: Tree) -> Self {
-        Self { net, tree }
+        Self {
+            net,
+            tree: Some(tree),
+        }
     }
 
     pub async fn nat(self) -> i128 {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::IntRequest(tx), self.tree);
+            locked.link(Tree::IntRequest(tx), self.tree.unwrap());
             locked.notify_reducer();
             rx
         };
@@ -56,7 +62,7 @@ impl Handle {
     pub async fn provide_nat(self, value: i128) {
         assert!(value >= 0);
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree);
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
         locked.notify_reducer();
     }
 
@@ -64,7 +70,7 @@ impl Handle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::IntRequest(tx), self.tree);
+            locked.link(Tree::IntRequest(tx), self.tree.unwrap());
             locked.notify_reducer();
             rx
         };
@@ -73,7 +79,7 @@ impl Handle {
 
     pub fn provide_int(self, value: i128) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree);
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
         locked.notify_reducer();
     }
 
@@ -81,7 +87,7 @@ impl Handle {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::StringRequest(tx), self.tree);
+            locked.link(Tree::StringRequest(tx), self.tree.unwrap());
             locked.notify_reducer();
             rx
         };
@@ -90,68 +96,67 @@ impl Handle {
 
     pub fn provide_string(self, value: Arc<str>) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(PrimitiveComb::String(value)), self.tree);
+        locked.link(
+            Tree::Primitive(Primitive::String(value)),
+            self.tree.unwrap(),
+        );
         locked.notify_reducer();
     }
 
-    pub fn send(self) -> (Self, Self) {
+    pub fn send(&mut self) -> Self {
         let mut locked = self.net.lock().expect("lock failed");
         let (t0, t1) = locked.create_wire();
         let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree);
+        locked.link(
+            Tree::Con(Box::new(u1), Box::new(t1)),
+            self.tree.take().unwrap(),
+        );
         locked.notify_reducer();
         drop(locked);
 
-        (
-            Self {
-                net: Arc::clone(&self.net),
-                tree: t0,
-            },
-            Self {
-                net: self.net,
-                tree: u0,
-            },
-        )
-    }
-
-    pub fn receive(self) -> (Self, Self) {
-        let mut locked = self.net.lock().expect("lock failed");
-        let (t0, t1) = locked.create_wire();
-        let (u0, u1) = locked.create_wire();
-        locked.link(Tree::Con(Box::new(u1), Box::new(t1)), self.tree);
-        locked.notify_reducer();
-        drop(locked);
-
-        (
-            Self {
-                net: Arc::clone(&self.net),
-                tree: t0,
-            },
-            Self {
-                net: self.net,
-                tree: u0,
-            },
-        )
-    }
-
-    pub fn signal(self, index: u16, size: u16) -> Self {
-        let mut locked = self.net.lock().expect("lock failed");
-        let (a0, a1) = locked.create_wire();
-        locked.link(Tree::Signal(index, size, Box::new(a1)), self.tree);
-        locked.notify_reducer();
-        drop(locked);
-
+        self.tree = Some(u0);
         Self {
-            net: self.net,
-            tree: a0,
+            net: Arc::clone(&self.net),
+            tree: Some(t0),
         }
     }
 
-    pub async fn case(self, size: u16) -> (u16, Self) {
+    pub fn receive(&mut self) -> Self {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (t0, t1) = locked.create_wire();
+        let (u0, u1) = locked.create_wire();
+        locked.link(
+            Tree::Con(Box::new(u1), Box::new(t1)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        drop(locked);
+
+        self.tree = Some(u0);
+        Self {
+            net: Arc::clone(&self.net),
+            tree: Some(t0),
+        }
+    }
+
+    pub fn signal(&mut self, index: u16, size: u16) {
+        let mut locked = self.net.lock().expect("lock failed");
+        let (a0, a1) = locked.create_wire();
+        locked.link(
+            Tree::Signal(index, size, Box::new(a1)),
+            self.tree.take().unwrap(),
+        );
+        locked.notify_reducer();
+        drop(locked);
+
+        self.tree = Some(a0);
+    }
+
+    pub async fn case(&mut self, size: u16) -> u16 {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
-            locked.link(Tree::SignalRequest(tx), self.tree);
+            locked.link(Tree::SignalRequest(tx), self.tree.take().unwrap());
             locked.notify_reducer();
             rx
         };
@@ -159,24 +164,19 @@ impl Handle {
         let (index, actual_size, tree) = rx.await.expect("sender dropped");
         assert_eq!(size, actual_size);
 
-        (
-            index,
-            Self {
-                net: self.net,
-                tree: *tree,
-            },
-        )
+        self.tree = Some(*tree);
+        index
     }
 
     pub fn break_(self) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree);
+        locked.link(Tree::Era, self.tree.unwrap());
         locked.notify_reducer();
     }
 
     pub fn continue_(self) {
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Era, self.tree);
+        locked.link(Tree::Era, self.tree.unwrap());
         locked.notify_reducer();
     }
 }
@@ -284,7 +284,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree.tree);
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.tree);
         locked.notify_reducer();
     }
 
@@ -318,7 +318,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(Tree::Primitive(PrimitiveComb::Int(value)), self.tree.tree);
+        locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.tree);
         locked.notify_reducer();
     }
 
@@ -352,10 +352,7 @@ impl TypedHandle {
         };
 
         let mut locked = self.net.lock().expect("lock failed");
-        locked.link(
-            Tree::Primitive(PrimitiveComb::String(value)),
-            self.tree.tree,
-        );
+        locked.link(Tree::Primitive(Primitive::String(value)), self.tree.tree);
         locked.notify_reducer();
     }
 

@@ -12,8 +12,9 @@ use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
 use indexmap::IndexMap;
 
+use crate::par::primitive::Primitive;
+
 use super::readback::Handle;
-use super::PrimitiveComb;
 
 pub type VarId = usize;
 
@@ -40,8 +41,10 @@ pub enum Tree {
     Choice(Box<Tree>, Arc<[usize]>),
     Var(usize),
     Package(usize),
-    Primitive(PrimitiveComb),
+
     SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
+
+    Primitive(Primitive),
     IntRequest(oneshot::Sender<i128>),
     StringRequest(oneshot::Sender<Arc<str>>),
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
@@ -352,7 +355,7 @@ impl Net {
                 self.rewrites.expand += 1;
             }
             (Primitive(p), a) | (a, Primitive(p)) => {
-                p.interact(self, a);
+                self.primitive_interact(p, a);
             }
             (SignalRequest(tx), Signal(index, size, payload))
             | (Signal(index, size, payload), SignalRequest(tx)) => {
@@ -373,6 +376,30 @@ impl Net {
                 }
             },
             (a, b) => panic!("Invalid combinator interaction: {:?} <> {:?}", a, b),
+        }
+    }
+
+    fn primitive_interact(&mut self, p: Primitive, tree: Tree) {
+        match (p, tree) {
+            (Primitive::Int(i), Tree::IntRequest(c)) => {
+                c.send(i).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
+            (Primitive::String(s), Tree::StringRequest(c)) => {
+                c.send(s).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
+
+            (_, Tree::Era) => {
+                self.rewrites.era += 1;
+            }
+            (p, Tree::Dup(a, b)) => {
+                self.link(Tree::Primitive(p.clone()), *a);
+                self.link(Tree::Primitive(p), *b);
+                self.rewrites.commute += 1;
+            }
+
+            _ => unreachable!("Invalid interaction with a primitive"),
         }
     }
 
@@ -548,8 +575,8 @@ impl Net {
             }
             Tree::Package(id) => format!("@{}", id),
 
-            Tree::Primitive(PrimitiveComb::Int(i)) => format!("{{{}}}", i),
-            Tree::Primitive(PrimitiveComb::String(s)) => format!("{{{:?}}}", s),
+            Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
+            Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),

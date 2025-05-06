@@ -17,9 +17,7 @@
 pub mod compiler;
 pub mod net;
 pub mod parse;
-pub mod primitive;
 pub use compiler::{compile_file, IcCompiled};
 pub use net::{Net, Tree};
-pub use primitive::PrimitiveComb;
 
 pub mod readback;

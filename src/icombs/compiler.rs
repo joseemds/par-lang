@@ -3,13 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use super::{
-    net::{Net, Tree},
-    PrimitiveComb,
-};
+use super::net::{Net, Tree};
 use crate::par::{
     language::{GlobalName, LocalName},
-    primitive::Primitive,
     process::{Captures, Command, Expression, Process},
     types::Type,
 };
@@ -527,19 +523,10 @@ impl Compiler {
                 Ok(v1)
             }),
 
-            Expression::Primitive(_, value, _) => {
-                let ty = value.get_type();
-                match value {
-                    Primitive::Int(i) => Ok(TypedTree {
-                        tree: Tree::Primitive(PrimitiveComb::Int(*i)),
-                        ty,
-                    }),
-                    Primitive::String(s) => Ok(TypedTree {
-                        tree: Tree::Primitive(PrimitiveComb::String(Arc::clone(s))),
-                        ty,
-                    }),
-                }
-            }
+            Expression::Primitive(_, value, _) => Ok(TypedTree {
+                tree: Tree::Primitive(value.clone()),
+                ty: value.get_type(),
+            }),
 
             Expression::External(_, f, typ) => Ok(TypedTree {
                 tree: Tree::External(*f),
