@@ -1,20 +1,3 @@
-type Nat = recursive either {
-  .zero!
-  .add1 self
-}
-
-dec Zero : Nat
-dec Add1 : [Nat] Nat
-dec Add  : [Nat, Nat] Nat
-
-def Zero = .zero!
-def Add1 = [n] .add1 n
-
-def Add = [n1, n2] n1.begin.case {
-  .zero!   => n2,
-  .add1 n1 => Add1(n1.loop)
-}
-
 type Seq<a> = iterative choice {
   .close => !
   .next  => (a) self
@@ -22,10 +5,18 @@ type Seq<a> = iterative choice {
 
 dec Fibonacci : Seq<Nat>
 def Fibonacci =
-  let (a) b = (Zero) Add1(Zero)
+  let (a) b = (0) 1
   in begin case {
     .close => !
     .next =>
-      let (a) b = (b) Add(a, b)
+      let (a) b = (b) Nat.Add(a, b)
       in (a) loop
+  }
+
+dec NthFib : [Nat] Nat
+def NthFib = [n: Nat]
+  let fib = Fibonacci
+  in Nat.Repeat(n).begin.case {
+    .end! => do { fib.next[x].close? } in x,
+    .step s => do { fib.next[x] } in s.loop,
   }
