@@ -15,7 +15,8 @@ use crate::par::{
 use arcstr::Substr;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
-use std::{collections::BTreeMap, sync::Arc};
+use num_bigint::BigInt;
+use std::collections::BTreeMap;
 use winnow::{
     combinator::{alt, cut_err, opt, preceded, repeat, separated, terminated, trace},
     error::{
@@ -735,7 +736,8 @@ fn expr_literal(input: &mut Input) -> Result<Expression> {
 fn expr_literal_int(input: &mut Input) -> Result<Expression> {
     t(TokenKind::Integer)
         .map(|token| {
-            let i = i128::from_str_radix(token.raw, 10).expect("invalid integer literal");
+            let s: String = token.raw.chars().filter(|c| *c != '_').collect();
+            let i = BigInt::parse_bytes(s.as_bytes(), 10).unwrap();
             Expression::Primitive(token.span, Primitive::Int(i))
         })
         .parse_next(input)

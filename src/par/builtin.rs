@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arcstr::Substr;
+use num_bigint::BigInt;
 
 use super::{
     language::GlobalName,
@@ -53,7 +54,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     |mut handle| {
                         Box::pin(async move {
                             let mut n = handle.receive().nat().await;
-                            while n > 0 {
+                            while n > BigInt::ZERO {
                                 handle.signal(1, 2); // step
                                 n -= 1;
                             }

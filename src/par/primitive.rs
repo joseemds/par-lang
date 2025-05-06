@@ -1,12 +1,13 @@
 use std::fmt::{self, Write};
 
 use arcstr::Substr;
+use num_bigint::BigInt;
 
 use super::types::Type;
 
 #[derive(Clone, Debug)]
 pub enum Primitive {
-    Int(i128),
+    Int(BigInt),
     String(Substr),
 }
 
@@ -20,7 +21,7 @@ impl Primitive {
 
     pub fn get_type(&self) -> Type {
         match self {
-            Self::Int(n) if *n >= 0 => Type::nat(),
+            Self::Int(n) if n >= &BigInt::ZERO => Type::nat(),
             Self::Int(_) => Type::int(),
             Self::String(_) => Type::string(),
         }

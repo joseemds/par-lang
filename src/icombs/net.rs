@@ -12,6 +12,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
 use indexmap::IndexMap;
+use num_bigint::BigInt;
 
 use crate::par::primitive::Primitive;
 
@@ -46,7 +47,7 @@ pub enum Tree {
     SignalRequest(oneshot::Sender<(u16, u16, Box<Tree>)>),
 
     Primitive(Primitive),
-    IntRequest(oneshot::Sender<i128>),
+    IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<Substr>),
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
 }

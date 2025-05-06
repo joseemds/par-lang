@@ -9,11 +9,12 @@ use futures::{
     channel::oneshot,
     task::{Spawn, SpawnExt},
 };
+use num_bigint::BigInt;
 use std::sync::{Arc, Mutex};
 
 enum Request {
-    Nat(String, Box<dyn Send + FnOnce(i128)>),
-    Int(String, Box<dyn Send + FnOnce(i128)>),
+    Nat(String, Box<dyn Send + FnOnce(BigInt)>),
+    Int(String, Box<dyn Send + FnOnce(BigInt)>),
     String(String, Box<dyn Send + FnOnce(Substr)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
@@ -25,10 +26,10 @@ pub enum Event {
     Choice(String),
     Break,
     Continue,
-    Nat(i128),
-    NatRequest(i128),
-    Int(i128),
-    IntRequest(i128),
+    Nat(BigInt),
+    NatRequest(BigInt),
+    Int(BigInt),
+    IntRequest(BigInt),
     String(Substr),
     StringRequest(Substr),
 }
@@ -130,7 +131,7 @@ impl Element {
                     if let Some(request) = self.request.take() {
                         match request {
                             Request::Nat(mut input, callback) => {
-                                let input_number = i128::from_str_radix(&input, 10).ok();
+                                let input_number = BigInt::parse_bytes(input.as_bytes(), 10);
                                 let entered = ui
                                     .horizontal(|ui| {
                                         ui.add(
@@ -138,7 +139,8 @@ impl Element {
                                                 .hint_text("Type a natural number..."),
                                         );
                                         let button = ui.add_enabled(
-                                            input_number.is_some() && input_number.unwrap() >= 0,
+                                            input_number.is_some()
+                                                && input_number.as_ref().unwrap() >= &BigInt::ZERO,
                                             egui::Button::small(egui::Button::new("OK")),
                                         );
                                         button.clicked() && input_number.is_some()
@@ -146,7 +148,7 @@ impl Element {
                                     .inner;
                                 if entered {
                                     let number = input_number.unwrap();
-                                    self.history.push(Event::NatRequest(number));
+                                    self.history.push(Event::NatRequest(number.clone()));
                                     callback(number);
                                 } else {
                                     self.request = Some(Request::Nat(input, callback));
@@ -154,7 +156,7 @@ impl Element {
                             }
 
                             Request::Int(mut input, callback) => {
-                                let input_number = i128::from_str_radix(&input, 10).ok();
+                                let input_number = BigInt::parse_bytes(input.as_bytes(), 10);
                                 let entered = ui
                                     .horizontal(|ui| {
                                         ui.add(
@@ -170,7 +172,7 @@ impl Element {
                                     .inner;
                                 if entered {
                                     let number = input_number.unwrap();
-                                    self.history.push(Event::IntRequest(number));
+                                    self.history.push(Event::IntRequest(number.clone()));
                                     callback(number);
                                 } else {
                                     self.request = Some(Request::Int(input, callback));

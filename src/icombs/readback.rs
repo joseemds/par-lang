@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use arcstr::Substr;
 use futures::channel::oneshot;
+use num_bigint::BigInt;
 
 use crate::par::{
     primitive::Primitive,
@@ -22,12 +23,12 @@ pub struct TypedHandle {
 }
 
 pub enum TypedReadback {
-    Nat(i128),
-    Int(i128),
+    Nat(BigInt),
+    Int(BigInt),
     String(Substr),
 
-    NatRequest(Box<dyn Send + FnOnce(i128)>),
-    IntRequest(Box<dyn Send + FnOnce(i128)>),
+    NatRequest(Box<dyn Send + FnOnce(BigInt)>),
+    IntRequest(Box<dyn Send + FnOnce(BigInt)>),
     StringRequest(Box<dyn Send + FnOnce(Substr)>),
 
     Times(TypedHandle, TypedHandle),
@@ -47,7 +48,7 @@ impl Handle {
         }
     }
 
-    pub async fn nat(self) -> i128 {
+    pub async fn nat(self) -> BigInt {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -56,18 +57,18 @@ impl Handle {
             rx
         };
         let value = rx.await.expect("sender dropped");
-        assert!(value >= 0);
+        assert!(value >= BigInt::ZERO);
         value
     }
 
-    pub async fn provide_nat(self, value: i128) {
-        assert!(value >= 0);
+    pub async fn provide_nat(self, value: BigInt) {
+        assert!(value >= BigInt::ZERO);
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
         locked.notify_reducer();
     }
 
-    pub async fn int(self) -> i128 {
+    pub async fn int(self) -> BigInt {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -78,7 +79,7 @@ impl Handle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_int(self, value: i128) {
+    pub fn provide_int(self, value: BigInt) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
         locked.notify_reducer();
@@ -251,7 +252,7 @@ impl TypedHandle {
         }
     }
 
-    pub async fn nat(mut self) -> i128 {
+    pub async fn nat(mut self) -> BigInt {
         self.prepare_for_readback();
         let Type::Primitive(_, PrimitiveType::Nat) = self.tree.ty else {
             panic!("Incorrect type for `nat`: {:?}", self.tree.ty);
@@ -266,12 +267,12 @@ impl TypedHandle {
         };
 
         let value = rx.await.expect("sender dropped");
-        assert!(value >= 0);
+        assert!(value >= BigInt::ZERO);
         value
     }
 
-    pub fn provide_nat(mut self, value: i128) {
-        assert!(value >= 0);
+    pub fn provide_nat(mut self, value: BigInt) {
+        assert!(value >= BigInt::ZERO);
 
         self.prepare_for_readback();
         let Type::Chan(span, dual) = self.tree.ty else {
@@ -289,7 +290,7 @@ impl TypedHandle {
         locked.notify_reducer();
     }
 
-    pub async fn int(mut self) -> i128 {
+    pub async fn int(mut self) -> BigInt {
         self.prepare_for_readback();
         let Type::Primitive(_, PrimitiveType::Int | PrimitiveType::Nat) = self.tree.ty else {
             panic!("Incorrect type for `int`: {:?}", self.tree.ty);
@@ -306,7 +307,7 @@ impl TypedHandle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_int(mut self, value: i128) {
+    pub fn provide_int(mut self, value: BigInt) {
         self.prepare_for_readback();
         let Type::Chan(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_int`: {:?}", self.tree.ty);
