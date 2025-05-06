@@ -2,6 +2,7 @@ use crate::icombs::{
     readback::{TypedHandle, TypedReadback},
     Net,
 };
+use arcstr::Substr;
 use core::fmt::Debug;
 use eframe::egui::{self, RichText, Ui};
 use futures::{
@@ -13,7 +14,7 @@ use std::sync::{Arc, Mutex};
 enum Request {
     Nat(String, Box<dyn Send + FnOnce(i128)>),
     Int(String, Box<dyn Send + FnOnce(i128)>),
-    String(String, Box<dyn Send + FnOnce(Arc<str>)>),
+    String(String, Box<dyn Send + FnOnce(Substr)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
 
@@ -28,8 +29,8 @@ pub enum Event {
     NatRequest(i128),
     Int(i128),
     IntRequest(i128),
-    String(Arc<str>),
-    StringRequest(Arc<str>),
+    String(Substr),
+    StringRequest(Substr),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,8 +189,8 @@ impl Element {
                                     })
                                     .inner;
                                 if entered {
-                                    let string = Arc::from(input);
-                                    self.history.push(Event::StringRequest(Arc::clone(&string)));
+                                    let string = Substr::from(input);
+                                    self.history.push(Event::StringRequest(string.clone()));
                                     callback(string);
                                 } else {
                                     self.request = Some(Request::String(input, callback));

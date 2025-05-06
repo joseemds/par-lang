@@ -12,6 +12,7 @@ use crate::par::{
     program::{Declaration, Definition, Module, TypeDef},
     types::Type,
 };
+use arcstr::Substr;
 use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use std::{collections::BTreeMap, sync::Arc};
@@ -745,7 +746,7 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
         .map(|token| {
             //FIXME crashes here, shouldn't crash
             let lit: syn::LitStr = syn::parse_str(token.raw).expect("invalid string literal");
-            Expression::Primitive(token.span, Primitive::String(Arc::from(lit.value())))
+            Expression::Primitive(token.span, Primitive::String(Substr::from(lit.value())))
         })
         .parse_next(input)
 }

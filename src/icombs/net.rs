@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+use arcstr::Substr;
 use futures::channel::{mpsc, oneshot};
 use futures::task::{Spawn, SpawnExt};
 use futures::StreamExt;
@@ -46,7 +47,7 @@ pub enum Tree {
 
     Primitive(Primitive),
     IntRequest(oneshot::Sender<i128>),
-    StringRequest(oneshot::Sender<Arc<str>>),
+    StringRequest(oneshot::Sender<Substr>),
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
 }
 

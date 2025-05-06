@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use arcstr::Substr;
+
 use super::{
     language::GlobalName,
     process,
@@ -108,11 +110,13 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                         let mut buf = String::new();
                         loop {
                             match handle.case(2).await {
-                                0 => { // add
+                                0 => {
+                                    // add
                                     buf += &handle.receive().string().await;
                                 }
-                                1 => { // build
-                                    handle.provide_string(Arc::from(buf));
+                                1 => {
+                                    // build
+                                    handle.provide_string(Substr::from(buf));
                                     break;
                                 }
                                 _ => unreachable!(),

@@ -1,14 +1,13 @@
-use std::{
-    fmt::{self, Write},
-    sync::Arc,
-};
+use std::fmt::{self, Write};
+
+use arcstr::Substr;
 
 use super::types::Type;
 
 #[derive(Clone, Debug)]
 pub enum Primitive {
     Int(i128),
-    String(Arc<str>),
+    String(Substr),
 }
 
 impl Primitive {

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use arcstr::Substr;
 use futures::channel::oneshot;
 
 use crate::par::{
@@ -23,11 +24,11 @@ pub struct TypedHandle {
 pub enum TypedReadback {
     Nat(i128),
     Int(i128),
-    String(Arc<str>),
+    String(Substr),
 
     NatRequest(Box<dyn Send + FnOnce(i128)>),
     IntRequest(Box<dyn Send + FnOnce(i128)>),
-    StringRequest(Box<dyn Send + FnOnce(Arc<str>)>),
+    StringRequest(Box<dyn Send + FnOnce(Substr)>),
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
@@ -83,7 +84,7 @@ impl Handle {
         locked.notify_reducer();
     }
 
-    pub async fn string(self) -> Arc<str> {
+    pub async fn string(self) -> Substr {
         let rx = {
             let (tx, rx) = oneshot::channel();
             let mut locked = self.net.lock().expect("lock failed");
@@ -94,7 +95,7 @@ impl Handle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_string(self, value: Arc<str>) {
+    pub fn provide_string(self, value: Substr) {
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(
             Tree::Primitive(Primitive::String(value)),
@@ -322,7 +323,7 @@ impl TypedHandle {
         locked.notify_reducer();
     }
 
-    pub async fn string(mut self) -> Arc<str> {
+    pub async fn string(mut self) -> Substr {
         self.prepare_for_readback();
         let Type::Primitive(_, PrimitiveType::String) = self.tree.ty else {
             panic!("Incorrect type for `string`: {:?}", self.tree.ty);
@@ -339,7 +340,7 @@ impl TypedHandle {
         rx.await.expect("sender dropped")
     }
 
-    pub fn provide_string(mut self, value: Arc<str>) {
+    pub fn provide_string(mut self, value: Substr) {
         self.prepare_for_readback();
         let Type::Chan(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
