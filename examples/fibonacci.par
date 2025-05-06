@@ -14,9 +14,9 @@ def Fibonacci =
   }
 
 dec NthFib : [Nat] Nat
-def NthFib = [n: Nat]
+def NthFib = [n]
   let fib = Fibonacci
   in Nat.Repeat(n).begin.case {
-    .end! => do { fib.next[x].close? } in x,
+    .end!   => do { fib.next[x].close? } in x,
     .step s => do { fib.next[x] } in s.loop,
   }
