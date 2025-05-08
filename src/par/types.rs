@@ -1268,6 +1268,38 @@ impl Type {
             }
         }
     }
+
+    fn contains_self(&self, label: &Option<LocalName>) -> bool {
+        match self {
+            Self::Primitive(_, _) => false,
+            Self::Var(_, _) => false,
+            Self::Name(_, _, args) => args.iter().any(|arg| arg.contains_self(label)),
+
+            Self::Pair(_, t, u) => t.contains_self(label) || u.contains_self(label),
+            Self::Function(_, t, u) => t.contains_self(label) || u.contains_self(label),
+            Self::Either(_, branches) => branches.iter().any(|(_, typ)| typ.contains_self(label)),
+            Self::Choice(_, branches) => branches.iter().any(|(_, typ)| typ.contains_self(label)),
+            Self::Break(_) => false,
+            Self::Continue(_) => false,
+
+            Self::Recursive {
+                label: label1,
+                body,
+                ..
+            } => label1 != label && body.contains_self(label),
+            Self::Iterative {
+                label: label1,
+                body,
+                ..
+            } => label1 != label && body.contains_self(label),
+            Self::Self_(_, label1) => label1 == label,
+
+            Self::Exists(_, _, body) => body.contains_self(label),
+            Self::Forall(_, _, body) => body.contains_self(label),
+
+            Self::Chan(_, t) => t.contains_self(label),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1686,12 +1718,12 @@ impl Context {
                     match (inferred_type, inferred_in_branch) {
                         (None, Some(t2)) => inferred_type = Some(t2),
                         (Some(t1), Some(t2))
-                            if t1.is_assignable_to(&t2, &self.type_defs, &HashSet::new())? =>
+                            if t2.is_assignable_to(&t1, &self.type_defs, &HashSet::new())? =>
                         {
                             inferred_type = Some(t2)
                         }
                         (Some(t1), Some(t2))
-                            if !t2.is_assignable_to(&t1, &self.type_defs, &HashSet::new())? =>
+                            if !t1.is_assignable_to(&t2, &self.type_defs, &HashSet::new())? =>
                         {
                             return Err(TypeError::TypesCannotBeUnified(t1, t2))
                         }
@@ -1788,11 +1820,17 @@ impl Context {
                 )?;
                 let (process, inferred_type) = analyze_process(self, process)?;
 
-                let inferred_iterative = inferred_type.map(|body| Type::Iterative {
-                    span: span.clone(),
-                    asc: typ_asc,
-                    label: label.clone(),
-                    body: Box::new(body),
+                let inferred_type = inferred_type.map(|body| {
+                    if body.contains_self(label) {
+                        Type::Iterative {
+                            span: span.clone(),
+                            asc: typ_asc,
+                            label: label.clone(),
+                            body: Box::new(body),
+                        }
+                    } else {
+                        body
+                    }
                 });
 
                 (
@@ -1802,7 +1840,7 @@ impl Context {
                         captures: captures.clone(),
                         body: process,
                     },
-                    inferred_iterative,
+                    inferred_type,
                 )
             }
 
