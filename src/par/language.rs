@@ -171,6 +171,7 @@ pub enum Process {
         value: Box<Expression>,
         then: Box<Self>,
     },
+    GlobalCommand(GlobalName, Command),
     Command(LocalName, Command),
     Telltypes(Span, Box<Self>),
     Noop(Point),
@@ -951,6 +952,22 @@ impl Process {
                 then,
             } => pattern.compile_let(span, value.compile()?, then.compile(pass)?),
 
+            Self::GlobalCommand(global_name, command) => {
+                let span = global_name.span;
+                let local_name = LocalName {
+                    span,
+                    string: format!("{}", global_name),
+                };
+                Arc::new(process::Process::Let {
+                    span,
+                    name: local_name.clone(),
+                    annotation: None,
+                    typ: (),
+                    value: Arc::new(process::Expression::Global(span, global_name.clone(), ())),
+                    then: command.compile(&local_name, pass)?,
+                })
+            }
+
             Self::Command(name, command) => command.compile(name, pass)?,
 
             Self::Telltypes(span, process) => Arc::new(process::Process::Telltypes(
@@ -970,7 +987,7 @@ impl Spanning for Process {
     fn span(&self) -> Span {
         match self {
             Self::Let { span, .. } | Self::Telltypes(span, _) => span.clone(),
-
+            Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
             Self::Noop(point) => point.point_span(),
         }

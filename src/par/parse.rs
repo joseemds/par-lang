@@ -17,6 +17,7 @@ use core::fmt::Display;
 use miette::{SourceOffset, SourceSpan};
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
+use winnow::token::literal;
 use winnow::{
     combinator::{alt, cut_err, opt, preceded, repeat, separated, terminated, trace},
     error::{
@@ -25,7 +26,6 @@ use winnow::{
     stream::{Accumulate, Stream},
     Parser,
 };
-use winnow::token::literal;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MyError<C = StrContext> {
@@ -1208,7 +1208,7 @@ fn apply_branch_recv_type(input: &mut Input) -> Result<ApplyBranch> {
 }
 
 fn process(input: &mut Input) -> Result<Process> {
-    alt((proc_let, proc_telltypes, command))
+    alt((proc_let, proc_telltypes, global_command, command))
         .context(StrContext::Label("process"))
         .parse_next(input)
 }
@@ -1240,6 +1240,18 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
                     None => Box::new(Process::Noop(token.span.end)),
                 },
             )
+        })
+        .parse_next(input)
+}
+
+fn global_command(input: &mut Input) -> Result<Process> {
+    (global_name, cmd)
+        .map(|(name, cmd)| match cmd {
+            Some(cmd) => Process::GlobalCommand(name, cmd),
+            None => {
+                let noop_span = name.span.end;
+                Process::GlobalCommand(name, noop_cmd(noop_span))
+            }
         })
         .parse_next(input)
 }
@@ -1465,7 +1477,7 @@ fn cmd_recv_type(input: &mut Input) -> Result<Command> {
 }
 
 fn pass_process(input: &mut Input) -> Result<Process> {
-    alt((proc_let, proc_telltypes, command)).parse_next(input)
+    alt((proc_let, proc_telltypes, global_command, command)).parse_next(input)
 }
 
 fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
