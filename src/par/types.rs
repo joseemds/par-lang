@@ -120,8 +120,22 @@ impl Type {
         Self::Chan(Default::default(), Box::new(t))
     }
 
-    pub fn name(name: GlobalName, args: Vec<Self>) -> Self {
-        Self::Name(Default::default(), name, args)
+    pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
+        Self::Name(
+            Default::default(),
+            GlobalName::external(module, primary),
+            args,
+        )
+    }
+
+    pub fn var(name: &'static str) -> Self {
+        Self::Var(
+            Default::default(),
+            LocalName {
+                span: Default::default(),
+                string: String::from(name),
+            },
+        )
     }
 
     pub fn pair(t: Self, u: Self) -> Self {

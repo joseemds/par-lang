@@ -12,9 +12,58 @@ use super::{
 
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
+        "Bool",
+        Module {
+            type_defs: vec![TypeDef::external(
+                "Bool",
+                &[],
+                Type::either(vec![("false", Type::break_()), ("true", Type::break_())]),
+            )],
+            declarations: vec![],
+            definitions: vec![],
+        },
+    );
+
+    module.import(
+        "List",
+        Module {
+            type_defs: vec![TypeDef::external(
+                "List",
+                &["a"],
+                Type::recursive(
+                    None,
+                    Type::either(vec![
+                        ("empty", Type::break_()),
+                        ("item", Type::pair(Type::var("a"), Type::self_(None))),
+                    ]),
+                ),
+            )],
+            declarations: vec![],
+            definitions: vec![],
+        },
+    );
+
+    module.import(
+        "Ordering",
+        Module {
+            type_defs: vec![TypeDef::external(
+                "Ordering",
+                &[],
+                Type::either(vec![
+                    ("equal", Type::break_()),
+                    ("greater", Type::break_()),
+                    ("less", Type::break_()),
+                ]),
+            )],
+            declarations: vec![],
+            definitions: vec![],
+        },
+    );
+
+    module.import(
         "Nat",
         Module {
-            type_defs: vec![TypeDef::external("Nat", Type::nat())],
+            type_defs: vec![TypeDef::external("Nat", &[], Type::nat())],
             declarations: vec![],
             definitions: vec![
                 Definition::external(
@@ -24,7 +73,59 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                         Box::pin(async move {
                             let x = handle.receive().nat().await;
                             let y = handle.receive().nat().await;
-                            handle.provide_int(x + y);
+                            handle.provide_nat(x + y);
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Mul",
+                    Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            handle.provide_nat(x * y);
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Div",
+                    Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            handle.provide_nat(if y == BigInt::ZERO {
+                                BigInt::ZERO
+                            } else {
+                                x / y
+                            });
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Mod",
+                    Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            handle.provide_nat(if y == BigInt::ZERO {
+                                BigInt::ZERO
+                            } else {
+                                x % y
+                            });
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Min",
+                    Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            handle.provide_nat(x.min(y));
                         })
                     },
                 ),
@@ -35,7 +136,48 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                         Box::pin(async move {
                             let x = handle.receive().nat().await;
                             let y = handle.receive().int().await;
-                            handle.provide_int(x.max(y));
+                            handle.provide_nat(x.max(y));
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Equals",
+                    Type::function(
+                        Type::nat(),
+                        Type::function(Type::nat(), Type::name(Some("Bool"), "Bool", vec![])),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            if x == y {
+                                handle.signal(1, 2); // true
+                            } else {
+                                handle.signal(0, 2); // false
+                            }
+                            handle.break_();
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Compare",
+                    Type::function(
+                        Type::nat(),
+                        Type::function(
+                            Type::nat(),
+                            Type::name(Some("Ordering"), "Ordering", vec![]),
+                        ),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            let y = handle.receive().nat().await;
+                            match x.cmp(&y) {
+                                std::cmp::Ordering::Equal => handle.signal(0, 3),
+                                std::cmp::Ordering::Greater => handle.signal(1, 3),
+                                std::cmp::Ordering::Less => handle.signal(2, 3),
+                            }
+                            handle.break_();
                         })
                     },
                 ),
@@ -63,6 +205,41 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                         })
                     },
                 ),
+                Definition::external(
+                    "Range",
+                    Type::function(
+                        Type::nat(),
+                        Type::function(
+                            Type::nat(),
+                            Type::name(Some("List"), "List", vec![Type::nat()]),
+                        ),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let lo = handle.receive().nat().await;
+                            let hi = handle.receive().nat().await;
+
+                            let mut i = lo;
+                            while i < hi {
+                                handle.signal(1, 2); // item
+                                handle.send().provide_nat(i.clone());
+                                i += 1;
+                            }
+                            handle.signal(0, 2); // empty
+                            handle.break_();
+                        })
+                    },
+                ),
+                Definition::external(
+                    "ToString",
+                    Type::function(Type::nat(), Type::string()),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().nat().await;
+                            handle.provide_string(Substr::from(x.to_str_radix(10)))
+                        })
+                    },
+                ),
             ],
         },
     );
@@ -70,19 +247,178 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         "Int",
         Module {
-            type_defs: vec![TypeDef::external("Int", Type::int())],
+            type_defs: vec![TypeDef::external("Int", &[], Type::int())],
             declarations: vec![],
-            definitions: vec![Definition::external(
-                "Add",
-                Type::function(Type::int(), Type::function(Type::int(), Type::int())),
-                |mut handle| {
-                    Box::pin(async move {
-                        let x = handle.receive().int().await;
-                        let y = handle.receive().int().await;
-                        handle.provide_int(x + y);
-                    })
-                },
-            )],
+            definitions: vec![
+                Definition::external(
+                    "Add",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(x + y);
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Sub",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(x - y);
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Mul",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(x * y);
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Div",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(if y == BigInt::ZERO {
+                                BigInt::ZERO
+                            } else {
+                                x / y
+                            });
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Mod",
+                    Type::function(Type::int(), Type::function(Type::nat(), Type::nat())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().nat().await;
+                            if y == BigInt::ZERO {
+                                handle.provide_nat(BigInt::ZERO);
+                            } else if x < BigInt::ZERO {
+                                let rem = x % y.clone();
+                                handle.provide_nat(if rem == BigInt::ZERO {
+                                    BigInt::ZERO
+                                } else {
+                                    y.clone() + rem
+                                });
+                            } else {
+                                handle.provide_nat(x % y);
+                            }
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Min",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(x.min(y));
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Max",
+                    Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            handle.provide_int(x.max(y));
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Equals",
+                    Type::function(
+                        Type::int(),
+                        Type::function(Type::int(), Type::name(Some("Bool"), "Bool", vec![])),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            if x == y {
+                                handle.signal(1, 2); // true
+                            } else {
+                                handle.signal(0, 2); // false
+                            }
+                            handle.break_();
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Compare",
+                    Type::function(
+                        Type::int(),
+                        Type::function(
+                            Type::int(),
+                            Type::name(Some("Ordering"), "Ordering", vec![]),
+                        ),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            let y = handle.receive().int().await;
+                            match x.cmp(&y) {
+                                std::cmp::Ordering::Equal => handle.signal(0, 3),
+                                std::cmp::Ordering::Greater => handle.signal(1, 3),
+                                std::cmp::Ordering::Less => handle.signal(2, 3),
+                            }
+                            handle.break_();
+                        })
+                    },
+                ),
+                Definition::external(
+                    "Range",
+                    Type::function(
+                        Type::int(),
+                        Type::function(
+                            Type::int(),
+                            Type::name(Some("List"), "List", vec![Type::int()]),
+                        ),
+                    ),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let lo = handle.receive().int().await;
+                            let hi = handle.receive().int().await;
+
+                            let mut i = lo;
+                            while i < hi {
+                                handle.signal(1, 2); // item
+                                handle.send().provide_int(i.clone());
+                                i += 1;
+                            }
+                            handle.signal(0, 2); // empty
+                            handle.break_();
+                        })
+                    },
+                ),
+                Definition::external(
+                    "ToString",
+                    Type::function(Type::int(), Type::string()),
+                    |mut handle| {
+                        Box::pin(async move {
+                            let x = handle.receive().int().await;
+                            handle.provide_string(Substr::from(x.to_str_radix(10)))
+                        })
+                    },
+                ),
+            ],
         },
     );
 
@@ -90,9 +426,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         "String",
         Module {
             type_defs: vec![
-                TypeDef::external("String", Type::string()),
+                TypeDef::external("String", &[], Type::string()),
                 TypeDef::external(
                     "Builder",
+                    &[],
                     Type::iterative(
                         None,
                         Type::choice(vec![
@@ -105,7 +442,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
             declarations: vec![],
             definitions: vec![Definition::external(
                 "Builder",
-                Type::name(GlobalName::external(None, "Builder"), vec![]),
+                Type::name(None, "Builder", vec![]),
                 |mut handle| {
                     Box::pin(async move {
                         let mut buf = String::new();

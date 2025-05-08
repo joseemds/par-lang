@@ -47,11 +47,17 @@ pub struct Definition<Expr> {
 }
 
 impl TypeDef {
-    pub fn external(name: &'static str, typ: Type) -> Self {
+    pub fn external(name: &'static str, params: &[&'static str], typ: Type) -> Self {
         Self {
             span: Default::default(),
             name: GlobalName::external(None, name),
-            params: vec![],
+            params: params
+                .into_iter()
+                .map(|&var| LocalName {
+                    span: Default::default(),
+                    string: String::from(var),
+                })
+                .collect(),
             typ,
         }
     }

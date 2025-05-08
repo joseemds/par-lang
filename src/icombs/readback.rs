@@ -61,7 +61,7 @@ impl Handle {
         value
     }
 
-    pub async fn provide_nat(self, value: BigInt) {
+    pub fn provide_nat(self, value: BigInt) {
         assert!(value >= BigInt::ZERO);
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::Int(value)), self.tree.unwrap());
