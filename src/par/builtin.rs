@@ -481,5 +481,48 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 },
             )],
         },
+    );
+
+    module.import(
+        "Console",
+        Module {
+            type_defs: vec![TypeDef::external(
+                "Console",
+                &[],
+                Type::iterative(
+                    None,
+                    Type::choice(vec![
+                        ("close", Type::break_()),
+                        (
+                            "printLine",
+                            Type::function(Type::string(), Type::self_(None)),
+                        ),
+                    ]),
+                ),
+            )],
+            declarations: vec![],
+            definitions: vec![Definition::external(
+                "Open",
+                Type::name(None, "Console", vec![]),
+                |mut handle| {
+                    Box::pin(async move {
+                        loop {
+                            match handle.case(2).await {
+                                0 => {
+                                    // close
+                                    handle.break_();
+                                    break;
+                                }
+                                1 => {
+                                    // printLine
+                                    println!("{}", handle.receive().string().await);
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                    })
+                },
+            )],
+        },
     )
 }
