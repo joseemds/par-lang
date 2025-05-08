@@ -20,3 +20,20 @@ def NthFib = [n]
     .end!   => do { fib.next[x].close? } in x,
     .step s => do { fib.next[_] } in s.loop,
   }
+
+def Main: ! = do {
+  let console = Console.Open
+  let fib = Fibonacci
+
+  Nat.Repeat(200).begin.case {
+    .end! => {}
+    .step remaining => {
+      fib.next[n]
+      console.printLine(Nat.ToString(n))
+      remaining.loop
+    }
+  }
+
+  fib.close
+  console.close
+} in !

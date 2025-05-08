@@ -1,13 +1,3 @@
-type Nat = recursive either {
-  .zero!
-  .succ self
-}
-
-type List<a> = recursive either {
-  .empty!
-  .item(a) self
-}
-
 dec BubbleSort : [List<Nat>] List<Nat>
 def BubbleSort = [list] chan yield {
   let yield: chan List<Nat> = list.unfounded.case {
@@ -31,13 +21,8 @@ def BubbleSortStep = [first, tail] tail.begin.case {
 }
 
 dec Sort2 : [Nat, Nat] (Nat, Nat)!
-def Sort2 = [n1, n2] n1.begin.case {
-  .zero! => (.zero!, n2)!
-  .succ p1 => n2.case {
-    .zero! => (.zero!, .succ p1)!
-    .succ p2 => do {
-      let n2 = p2
-      let (p1, p2)! = p1.loop
-    } in (.succ p1, .succ p2)!
+def Sort2 = [n1, n2] Nat.Compare(n1, n2).case {
+    .less! => (n1, n2)!,
+    .equal! => (n1, n2)!,
+    .greater! => (n2, n1)!,
   }
-}

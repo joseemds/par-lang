@@ -1,13 +1,3 @@
-type Bool = either {
-  .true!
-  .false!
-}
-
-type List<a> = recursive either {
-  .empty!
-  .item(a) self
-}
-
 type Tree<a> = recursive either {
   .empty!
   .node(self, a, self)!

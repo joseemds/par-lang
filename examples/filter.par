@@ -1,7 +1,3 @@
-type Bool    = either { .true!, .false! }
-type Nat     = recursive either { .zero!, .add1 self }
-type List<a> = recursive either { .empty!, .item(a) self }
-
 type Func<a, b> = iterative choice {
   .drop => !
   .apply(a) => (b) self
@@ -27,10 +23,7 @@ def Not = [b] b.case { .true! => .false!, .false! => .true! }
 dec IsEven : Func<Nat, Bool>
 def IsEven = begin case {
   .drop => !
-  .apply(n) => (n.begin.case {
-    .zero!  => .true!
-    .add1 n => Not(n.loop)
-  }) loop
+  .apply(n) => (Nat.Equals(0, Nat.Mod(n, 2))) loop
 }
 
 def FilterEven = Filter(IsEven)

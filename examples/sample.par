@@ -1,10 +1,4 @@
-type Bool  = either { .true!, .false! }
 type Color = either { .red!, .green!, .blue! }
-
-type List<a> = recursive either {
-  .empty!
-  .item(a) self
-}
 
 type Seq<a> = iterative choice {
   .close => !

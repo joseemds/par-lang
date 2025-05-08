@@ -1,5 +1,3 @@
-type Nat = recursive either { .zero!, .add1 self }
-
 type Move = either {
   .rock!
   .paper!
@@ -37,16 +35,16 @@ def StartGame = [p1, p2] begin/game case {
   } in !
 
   .play_round => do {
-    let limit: Nat = .add1.add1.add1.zero!
+    let limit = 3
     p1.play_round
     p2.play_round
-  } in limit.begin/round.case {
-    .zero! => do {
+  } in Nat.Repeat(limit).begin.case {
+    .end! => do {
       p1.stop_round
       p2.stop_round
     } in (.too_long!) loop/game
 
-    .add1 limit => do {
+    .step remaining => do {
       p1.play_move[move1]
       p2.play_move[move2]
     } in CalculateRound(move1, move2).case {
@@ -60,7 +58,7 @@ def StartGame = [p1, p2] begin/game case {
         p2.win
       } in (.second_won!) loop/game
 
-      .draw! => do { p1.draw p2.draw } in limit.loop/round
+      .draw! => do { p1.draw p2.draw } in remaining.loop
     }
   }
 }
