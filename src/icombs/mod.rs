@@ -20,4 +20,7 @@ pub mod parse;
 pub use compiler::{compile_file, IcCompiled};
 pub use net::{Net, Tree};
 
+mod types;
+pub use types::{RuntimeType, RuntimeTypeVariant};
+
 pub mod readback;
