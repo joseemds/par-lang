@@ -466,7 +466,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     );
 
     module.import(
-        "Console",
+        "Debug",
         Module {
             type_defs: vec![],
             declarations: vec![],
