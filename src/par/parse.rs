@@ -25,7 +25,7 @@ use winnow::{
     stream::{Accumulate, Stream},
     Parser,
 };
-use winnow::{error::InputError, token::literal};
+use winnow::token::literal;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MyError<C = StrContext> {

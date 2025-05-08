@@ -4,7 +4,6 @@ use arcstr::Substr;
 use num_bigint::BigInt;
 
 use super::{
-    language::GlobalName,
     process,
     program::{Definition, Module, TypeDef},
     types::Type,
