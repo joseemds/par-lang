@@ -465,7 +465,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 ),
                 Definition::external(
                     "SplitAt",
-                    Type::function(Type::string(), Type::function(Type::int(), Type::pair(Type::string(), Type::string()))),
+                    Type::function(
+                        Type::string(),
+                        Type::function(Type::int(), Type::pair(Type::string(), Type::string())),
+                    ),
                     |mut handle| {
                         Box::pin(async move {
                             let string = handle.receive().string().await;
@@ -483,16 +486,19 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                             }
 
                             let char_index = char_index.iter_u32_digits().next().unwrap() as usize;
-                            let (left, right) = match string.as_str().char_indices().skip(char_index).next() {
-                                Some((byte_index, _)) => (string.substr(..byte_index), string.substr(byte_index..)),
-                                None => (string, Substr::from("")),
-                            };
+                            let (left, right) =
+                                match string.as_str().char_indices().skip(char_index).next() {
+                                    Some((byte_index, _)) => {
+                                        (string.substr(..byte_index), string.substr(byte_index..))
+                                    }
+                                    None => (string, Substr::from("")),
+                                };
 
                             handle.send().provide_string(left);
                             handle.provide_string(right);
                         })
-                    }
-                )
+                    },
+                ),
             ],
         },
     );
