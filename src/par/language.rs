@@ -204,6 +204,7 @@ pub struct CommandBranches(pub BTreeMap<LocalName, CommandBranch>);
 #[derive(Clone, Debug)]
 pub enum CommandBranch {
     Then(Span, Process),
+    BindThen(Span, LocalName, Process),
     Receive(Span, Pattern, Box<Self>),
     Continue(Span, Process),
     ReceiveType(Span, LocalName, Box<Self>),
@@ -1157,6 +1158,22 @@ impl CommandBranch {
         Ok(match self {
             Self::Then(_, process) => process.compile(pass)?,
 
+            Self::BindThen(span, name, process) => {
+                let process = process.compile(pass)?;
+                Arc::new(process::Process::Let {
+                    span: span.clone(),
+                    name: name.clone(),
+                    annotation: None,
+                    typ: (),
+                    value: Arc::new(process::Expression::Variable(
+                        span.clone(),
+                        object_name.clone(),
+                        (),
+                    )),
+                    then: process,
+                })
+            }
+
             Self::Receive(span, pattern, branch) => {
                 let process = branch.compile(object_name, pass)?;
                 pattern.compile_receive(0, span, object_name, process)
@@ -1189,6 +1206,7 @@ impl Spanning for CommandBranch {
     fn span(&self) -> Span {
         match self {
             Self::Then(span, _)
+            | Self::BindThen(span, _, _)
             | Self::Receive(span, _, _)
             | Self::Continue(span, _)
             | Self::ReceiveType(span, _, _) => span.clone(),

@@ -1483,6 +1483,7 @@ fn pass_process(input: &mut Input) -> Result<Process> {
 fn cmd_branch(input: &mut Input) -> Result<CommandBranch> {
     alt((
         cmd_branch_then,
+        cmd_branch_bind_then,
         cmd_branch_continue,
         cmd_branch_recv_type,
         cmd_branch_receive,
@@ -1505,6 +1506,27 @@ fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
         )
     })
     .parse_next(input)
+}
+
+fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
+    (
+        local_name,
+        cut_err((
+            t(TokenKind::Arrow),
+            (t(TokenKind::LCurly), opt(process), t(TokenKind::RCurly)),
+        )),
+    )
+        .map(|(name, (pre, (open, process, close)))| {
+            CommandBranch::BindThen(
+                pre.span.join(close.span),
+                name,
+                match process {
+                    Some(process) => process,
+                    None => Process::Noop(open.span.end),
+                },
+            )
+        })
+        .parse_next(input)
 }
 
 fn cmd_branch_receive(input: &mut Input) -> Result<CommandBranch> {
