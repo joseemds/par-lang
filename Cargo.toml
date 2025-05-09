@@ -28,9 +28,9 @@ serde_json = "1.0.140"
 serde = { version = "1.0.218", features = ["derive"] }
 clap = { version = "4.5.34", features = ["cargo"] }
 colored = "3.0.0"
-syn = "2.0.101"
 arcstr = "1.2.0"
 num-bigint = "0.4.6"
+unescaper = "0.1.6"
 # dialoguer = "0.11.0" # for dialogues
 # indicatif = "0.17.11" # for progress bars
 

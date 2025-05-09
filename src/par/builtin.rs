@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use arcstr::Substr;
 use num_bigint::BigInt;
@@ -374,9 +374,9 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                             let x = handle.receive().int().await;
                             let y = handle.receive().int().await;
                             match x.cmp(&y) {
-                                std::cmp::Ordering::Equal => handle.signal(0, 3),
-                                std::cmp::Ordering::Greater => handle.signal(1, 3),
-                                std::cmp::Ordering::Less => handle.signal(2, 3),
+                                Ordering::Equal => handle.signal(0, 3),
+                                Ordering::Greater => handle.signal(1, 3),
+                                Ordering::Less => handle.signal(2, 3),
                             }
                             handle.break_();
                         })

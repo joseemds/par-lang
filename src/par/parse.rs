@@ -747,8 +747,8 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
     t(TokenKind::String)
         .map(|token| {
             //FIXME crashes here, shouldn't crash
-            let lit: syn::LitStr = syn::parse_str(token.raw).expect("invalid string literal");
-            Expression::Primitive(token.span, Primitive::String(Substr::from(lit.value())))
+            let lit = unescaper::unescape(&token.raw[1..token.raw.len()-1]).expect("invalid string literal");
+            Expression::Primitive(token.span, Primitive::String(Substr::from(lit)))
         })
         .parse_next(input)
 }
