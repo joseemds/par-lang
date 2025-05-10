@@ -32,7 +32,7 @@ pub enum TokenKind {
     Integer,
     String,
 
-    UnclosedString,
+    InvalidString,
 
     LowercaseIdentifier,
     UppercaseIdentifier,
@@ -100,7 +100,7 @@ impl TokenKind {
             TokenKind::Integer => "integer",
             TokenKind::String => "string",
 
-            TokenKind::UnclosedString => "un-closed string",
+            TokenKind::InvalidString => "invalid string",
 
             TokenKind::LowercaseIdentifier => "lower-case identifier",
             TokenKind::UppercaseIdentifier => "upper-case identifier",
@@ -190,10 +190,16 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                     )
                         .take()
                         .parse_next(input)?;
-                    match opt('"').parse_next(input)? {
-                        Some(_) => Some((raw, TokenKind::String)),
-                        None => Some((raw, TokenKind::UnclosedString)),
-                    }
+                    let is_closed = opt('"').parse_next(input)?.is_some();
+                    let is_valid = unescaper::unescape(raw).is_ok();
+                    Some((
+                        raw,
+                        if is_closed && is_valid {
+                            TokenKind::String
+                        } else {
+                            TokenKind::InvalidString
+                        },
+                    ))
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let raw = take_while(

@@ -751,6 +751,7 @@ fn expr_literal_int(input: &mut Input) -> Result<Expression> {
 fn expr_literal_string(input: &mut Input) -> Result<Expression> {
     t(TokenKind::String)
         .map(|token| {
+            // validated in lexer
             let lit = unescaper::unescape(token.raw).unwrap();
             Expression::Primitive(token.span, Primitive::String(Substr::from(lit)))
         })
