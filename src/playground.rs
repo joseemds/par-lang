@@ -8,24 +8,18 @@ use std::{
 
 use eframe::egui::{self, RichText, Theme};
 use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
-use indexmap::IndexMap;
 
 use crate::{
     icombs::readback::TypedHandle,
     par::{
         builtin::import_builtins,
-        program::{Definition, Module, NameWithType, TypeOnHover},
+        program::{Definition, Module, NameWithType, ParseAndCompileError, TypeOnHover},
     },
     readback::Element,
 };
 use crate::{
     icombs::{compile_file, IcCompiled},
-    par::{
-        language::CompileError,
-        parse::{parse_module, SyntaxError},
-        process::Expression,
-        types::TypeError,
-    },
+    par::{language::CompileError, parse::SyntaxError, process::Expression, types::TypeError},
     spawn::TokioSpawn,
 };
 use crate::{location::Span, par::program::CheckedModule};
@@ -87,41 +81,12 @@ pub(crate) struct Compiled {
 
 impl Compiled {
     pub(crate) fn from_string(source: &str) -> Result<Compiled, Error> {
-        parse_module(source)
-            .map_err(Error::Parse)
-            .and_then(|program| {
-                let compile_result = program
-                    .definitions
-                    .into_iter()
-                    .map(
-                        |Definition {
-                             span,
-                             name,
-                             expression,
-                         }| {
-                            expression.compile().map(|compiled| Definition {
-                                span,
-                                name,
-                                expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
-                            })
-                        },
-                    )
-                    .collect::<Result<_, CompileError>>();
-                compile_result
-                    .map_err(|error| Error::Compile(error))
-                    .and_then(|compiled| {
-                        let mut module = Module {
-                            type_defs: program.type_defs,
-                            declarations: program.declarations,
-                            definitions: compiled,
-                        };
-                        import_builtins(&mut module);
-                        Ok(Compiled::from_program(module)?)
-                    })
-            })
+        let mut module = Module::parse_and_compile(source)?;
+        import_builtins(&mut module);
+        Ok(Compiled::from_module(module)?)
     }
 
-    pub(crate) fn from_program(program: Module<Arc<Expression<()>>>) -> Result<Self, Error> {
+    pub(crate) fn from_module(program: Module<Arc<Expression<()>>>) -> Result<Self, Error> {
         let pretty = program
             .definitions
             .iter()
@@ -178,6 +143,15 @@ pub(crate) enum Error {
     Compile(CompileError),
     InetCompile(crate::icombs::compiler::Error),
     Type(TypeError),
+}
+
+impl From<ParseAndCompileError> for Error {
+    fn from(error: ParseAndCompileError) -> Self {
+        match error {
+            ParseAndCompileError::Parse(error) => Self::Parse(error),
+            ParseAndCompileError::Compile(error) => Self::Compile(error),
+        }
+    }
 }
 
 impl Playground {

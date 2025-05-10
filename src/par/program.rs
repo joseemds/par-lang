@@ -5,10 +5,12 @@ use indexmap::IndexMap;
 use crate::{
     icombs::readback::Handle,
     location::{Point, Span},
+    par::parse::parse_module,
 };
 
 use super::{
-    language::{GlobalName, LocalName},
+    language::{CompileError, GlobalName, LocalName},
+    parse::SyntaxError,
     process,
     types::{Context, Type, TypeDefs, TypeError},
 };
@@ -80,7 +82,53 @@ impl Definition<Arc<process::Expression<()>>> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ParseAndCompileError {
+    Parse(SyntaxError),
+    Compile(CompileError),
+}
+
+impl From<SyntaxError> for ParseAndCompileError {
+    fn from(value: SyntaxError) -> Self {
+        Self::Parse(value)
+    }
+}
+
+impl From<CompileError> for ParseAndCompileError {
+    fn from(value: CompileError) -> Self {
+        Self::Compile(value)
+    }
+}
+
 impl Module<Arc<process::Expression<()>>> {
+    pub fn parse_and_compile(source: &str) -> Result<Self, ParseAndCompileError> {
+        let parsed = parse_module(source)?;
+
+        let compiled_definitions = parsed
+            .definitions
+            .into_iter()
+            .map(
+                |Definition {
+                     span,
+                     name,
+                     expression,
+                 }| {
+                    expression.compile().map(|compiled| Definition {
+                        span,
+                        name,
+                        expression: compiled.optimize().fix_captures(&IndexMap::new()).0,
+                    })
+                },
+            )
+            .collect::<Result<_, _>>()?;
+
+        Ok(Module {
+            type_defs: parsed.type_defs,
+            declarations: parsed.declarations,
+            definitions: compiled_definitions,
+        })
+    }
+
     pub fn import(&mut self, module_name: &str, module: Self) {
         let mut module = module;
         module.qualify(module_name);
