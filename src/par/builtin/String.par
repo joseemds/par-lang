@@ -1,0 +1,4 @@
+type Builder = iterative choice {
+  .add(String) => self,
+  .build => String,
+}

@@ -14,51 +14,23 @@ use super::{
 pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         "Bool",
-        Module {
-            type_defs: vec![TypeDef::external(
-                "Bool",
-                &[],
-                Type::either(vec![("false", Type::break_()), ("true", Type::break_())]),
-            )],
-            declarations: vec![],
-            definitions: vec![],
-        },
+        Module::parse_and_compile(include_str!("./builtin/Bool.par")).unwrap(),
     );
-
     module.import(
         "List",
-        Module {
-            type_defs: vec![TypeDef::external(
-                "List",
-                &["a"],
-                Type::recursive(
-                    None,
-                    Type::either(vec![
-                        ("empty", Type::break_()),
-                        ("item", Type::pair(Type::var("a"), Type::self_(None))),
-                    ]),
-                ),
-            )],
-            declarations: vec![],
-            definitions: vec![],
-        },
+        Module::parse_and_compile(include_str!("./builtin/List.par")).unwrap(),
     );
-
     module.import(
         "Ordering",
-        Module {
-            type_defs: vec![TypeDef::external(
-                "Ordering",
-                &[],
-                Type::either(vec![
-                    ("equal", Type::break_()),
-                    ("greater", Type::break_()),
-                    ("less", Type::break_()),
-                ]),
-            )],
-            declarations: vec![],
-            definitions: vec![],
-        },
+        Module::parse_and_compile(include_str!("./builtin/Ordering.par")).unwrap(),
+    );
+    module.import(
+        "String",
+        Module::parse_and_compile(include_str!("./builtin/String.par")).unwrap(),
+    );
+    module.import(
+        "Console",
+        Module::parse_and_compile(include_str!("./builtin/Console.par")).unwrap(),
     );
 
     module.import(
@@ -233,20 +205,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         "String",
         Module {
-            type_defs: vec![
-                TypeDef::external("String", &[], Type::string()),
-                TypeDef::external(
-                    "Builder",
-                    &[],
-                    Type::iterative(
-                        None,
-                        Type::choice(vec![
-                            ("add", Type::function(Type::string(), Type::self_(None))),
-                            ("build", Type::string()),
-                        ]),
-                    ),
-                ),
-            ],
+            type_defs: vec![TypeDef::external("String", &[], Type::string())],
             declarations: vec![],
             definitions: vec![
                 Definition::external("Builder", Type::name(None, "Builder", vec![]), |handle| {
@@ -280,20 +239,7 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         "Console",
         Module {
-            type_defs: vec![TypeDef::external(
-                "Console",
-                &[],
-                Type::iterative(
-                    None,
-                    Type::choice(vec![
-                        ("close", Type::break_()),
-                        (
-                            "printLine",
-                            Type::function(Type::string(), Type::self_(None)),
-                        ),
-                    ]),
-                ),
-            )],
+            type_defs: vec![],
             declarations: vec![],
             definitions: vec![Definition::external(
                 "Open",

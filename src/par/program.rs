@@ -137,7 +137,7 @@ impl Module<Arc<process::Expression<()>>> {
         self.definitions.append(&mut module.definitions);
     }
 
-    pub fn qualify(&mut self, module: &str) {
+    fn qualify(&mut self, module: &str) {
         for TypeDef {
             span: _,
             name,
