@@ -22,7 +22,7 @@ use crate::{
     icombs::{compile_file, IcCompiled},
     par::{
         language::CompileError,
-        parse::{parse_program, SyntaxError},
+        parse::{parse_module, SyntaxError},
         process::Expression,
         types::TypeError,
     },
@@ -87,7 +87,7 @@ pub(crate) struct Compiled {
 
 impl Compiled {
     pub(crate) fn from_string(source: &str) -> Result<Compiled, Error> {
-        parse_program(source)
+        parse_module(source)
             .map_err(Error::Parse)
             .and_then(|program| {
                 let compile_result = program

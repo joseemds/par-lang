@@ -304,7 +304,7 @@ pub fn set_miette_hook() {
     }));
 }
 
-pub fn parse_program(input: &str) -> std::result::Result<Module<Expression>, SyntaxError> {
+pub fn parse_module(input: &str) -> std::result::Result<Module<Expression>, SyntaxError> {
     let tokens = lex(&input);
     let e = match program(Input::new(&tokens)) {
         Ok(x) => return Ok(x),
@@ -1597,18 +1597,18 @@ mod test {
     #[test]
     fn test_parse_examples() {
         let input = include_str!("../../examples/sample.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = include_str!("../../examples/semigroup_queue.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = include_str!("../../examples/rock_paper_scissors.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = include_str!("../../examples/flatten.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = include_str!("../../examples/fibonacci.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = include_str!("../../examples/bubble_sort.par");
-        assert!(parse_program(input).is_ok());
+        assert!(parse_module(input).is_ok());
         let input = "begin the errors";
-        assert!(parse_program(input).is_err());
+        assert!(parse_module(input).is_err());
     }
 }
