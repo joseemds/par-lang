@@ -218,7 +218,18 @@ impl TypeOnHover {
     pub fn new(program: &CheckedModule) -> Self {
         let mut pairs = Vec::new();
 
-        for (_, definition) in &program.definitions {
+        for (name, declaration) in &program.declarations {
+            pairs.push((
+                name.span,
+                NameWithType(format!("{}", name), declaration.typ.clone()),
+            ));
+        }
+
+        for (name, definition) in &program.definitions {
+            pairs.push((
+                name.span,
+                NameWithType(format!("{}", name), definition.expression.get_type()),
+            ));
             definition
                 .expression
                 .types_at_spans(&mut |span, name, typ| pairs.push((span, NameWithType(name, typ))));
