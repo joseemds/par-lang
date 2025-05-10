@@ -109,9 +109,9 @@ pub enum Construct {
     Send(Span, Box<Expression>, Box<Self>),
     Receive(Span, Pattern, Box<Self>),
     /// constructs an either type
-    Choose(Span, LocalName, Box<Self>),
+    Signal(Span, LocalName, Box<Self>),
     /// constructs a choice type
-    Either(Span, ConstructBranches),
+    Case(Span, ConstructBranches),
     /// ! (unit)
     Break(Span),
     Begin {
@@ -139,8 +139,8 @@ pub enum ConstructBranch {
 pub enum Apply {
     Noop(Span),
     Send(Span, Box<Expression>, Box<Self>),
-    Choose(Span, LocalName, Box<Self>),
-    Either(Span, ApplyBranches),
+    Signal(Span, LocalName, Box<Self>),
+    Case(Span, ApplyBranches),
     Begin {
         span: Span,
         unfounded: bool,
@@ -183,8 +183,8 @@ pub enum Command {
     Link(Span, Box<Expression>),
     Send(Span, Expression, Box<Self>),
     Receive(Span, Pattern, Box<Self>),
-    Choose(Span, LocalName, Box<Self>),
-    Either(Span, CommandBranches, Option<Box<Process>>),
+    Signal(Span, LocalName, Box<Self>),
+    Case(Span, CommandBranches, Option<Box<Process>>),
     Break(Span),
     Continue(Span, Box<Process>),
     Begin {
@@ -622,7 +622,7 @@ impl Construct {
                 pattern.compile_receive(0, span, &LocalName::result(), process)
             }
 
-            Self::Choose(span, chosen, construct) => {
+            Self::Signal(span, chosen, construct) => {
                 let process = construct.compile()?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -632,7 +632,7 @@ impl Construct {
                 })
             }
 
-            Self::Either(span, ConstructBranches(construct_branches)) => {
+            Self::Case(span, ConstructBranches(construct_branches)) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
                 for (branch_name, construct_branch) in construct_branches {
@@ -711,8 +711,8 @@ impl Spanning for Construct {
         match self {
             Self::Send(span, _, _)
             | Self::Receive(span, _, _)
-            | Self::Choose(span, _, _)
-            | Self::Either(span, _)
+            | Self::Signal(span, _, _)
+            | Self::Case(span, _)
             | Self::Break(span)
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
@@ -790,7 +790,7 @@ impl Apply {
                 })
             }
 
-            Self::Choose(span, chosen, apply) => {
+            Self::Signal(span, chosen, apply) => {
                 let process = apply.compile()?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -800,7 +800,7 @@ impl Apply {
                 })
             }
 
-            Self::Either(span, ApplyBranches(expression_branches)) => {
+            Self::Case(span, ApplyBranches(expression_branches)) => {
                 let mut branches = Vec::new();
                 let mut processes = Vec::new();
                 for (branch_name, expression_branch) in expression_branches {
@@ -861,8 +861,8 @@ impl Spanning for Apply {
     fn span(&self) -> Span {
         match self {
             Self::Send(span, _, _)
-            | Self::Choose(span, _, _)
-            | Self::Either(span, _)
+            | Self::Signal(span, _, _)
+            | Self::Case(span, _)
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
             | Self::SendType(span, _, _)
@@ -1026,7 +1026,7 @@ impl Command {
                 pattern.compile_receive(0, span, object_name, process)
             }
 
-            Self::Choose(span, chosen, command) => {
+            Self::Signal(span, chosen, command) => {
                 let process = command.compile(object_name, pass)?;
                 Arc::new(process::Process::Do {
                     span: span.clone(),
@@ -1036,7 +1036,7 @@ impl Command {
                 })
             }
 
-            Self::Either(span, CommandBranches(process_branches), optional_process) => {
+            Self::Case(span, CommandBranches(process_branches), optional_process) => {
                 let pass = match optional_process {
                     Some(process) => Some(process.compile(pass)?),
                     None => pass,
@@ -1131,8 +1131,8 @@ impl Spanning for Command {
             Self::Link(span, _)
             | Self::Send(span, _, _)
             | Self::Receive(span, _, _)
-            | Self::Choose(span, _, _)
-            | Self::Either(span, _, _)
+            | Self::Signal(span, _, _)
+            | Self::Case(span, _, _)
             | Self::Break(span)
             | Self::Continue(span, _)
             | Self::Begin { span, .. }

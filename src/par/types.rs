@@ -47,8 +47,8 @@ pub enum TypeError {
 pub enum Operation {
     Send,
     Receive,
-    Choose,
-    Match,
+    Signal,
+    Case,
     Break,
     Continue,
     Begin,
@@ -1665,7 +1665,7 @@ impl Context {
                 let Type::Choice(_, branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Choose,
+                        Operation::Signal,
                         typ.clone(),
                     ));
                 };
@@ -1685,7 +1685,7 @@ impl Context {
                 let Type::Either(_, required_branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Match,
+                        Operation::Case,
                         typ.clone(),
                     ));
                 };

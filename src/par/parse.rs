@@ -829,8 +829,8 @@ fn construction(input: &mut Input) -> Result<Construct> {
         cons_unfounded,
         cons_loop,
         cons_then,
-        cons_choose,
-        cons_either,
+        cons_signal,
+        cons_case,
         cons_break,
         cons_send_type,
         cons_send,
@@ -883,19 +883,19 @@ fn cons_receive(input: &mut Input) -> Result<Construct> {
     .parse_next(input)
 }
 
-fn cons_choose(input: &mut Input) -> Result<Construct> {
-    // Note this can't be a commit_after because its possible that this is not a choose construction, and instead a branch of an either.
+fn cons_signal(input: &mut Input) -> Result<Construct> {
+    // Note this can't be a commit_after because its possible that this is not a signal construction, and instead a branch of an either.
     (t(TokenKind::Dot), (local_name, construction))
         .map(|(pre, (chosen, construct))| {
-            Construct::Choose(pre.span.join(construct.span()), chosen, Box::new(construct))
+            Construct::Signal(pre.span.join(construct.span()), chosen, Box::new(construct))
         })
         .parse_next(input)
 }
 
-fn cons_either(input: &mut Input) -> Result<Construct> {
+fn cons_case(input: &mut Input) -> Result<Construct> {
     commit_after(t(TokenKind::Case), branches_body(cons_branch))
         .map(|(pre, (branches_span, branches))| {
-            Construct::Either(pre.span.join(branches_span), ConstructBranches(branches))
+            Construct::Case(pre.span.join(branches_span), ConstructBranches(branches))
         })
         .parse_next(input)
 }
@@ -1034,8 +1034,8 @@ fn apply(input: &mut Input) -> Result<Option<Apply>> {
         apply_begin,
         apply_unfounded,
         apply_loop,
-        apply_choose,
-        apply_either,
+        apply_signal,
+        apply_case,
         apply_send_type,
         apply_send,
     )))
@@ -1060,25 +1060,25 @@ fn apply_send(input: &mut Input) -> Result<Apply> {
     .parse_next(input)
 }
 
-fn apply_choose(input: &mut Input) -> Result<Apply> {
+fn apply_signal(input: &mut Input) -> Result<Apply> {
     (t(TokenKind::Dot), (local_name, apply))
         .map(|(pre, (chosen, then))| {
             let then = match then {
                 Some(then) => then,
                 None => Apply::Noop(chosen.span.only_end()),
             };
-            Apply::Choose(pre.span.join(then.span()), chosen, Box::new(then))
+            Apply::Signal(pre.span.join(then.span()), chosen, Box::new(then))
         })
         .parse_next(input)
 }
 
-fn apply_either(input: &mut Input) -> Result<Apply> {
+fn apply_case(input: &mut Input) -> Result<Apply> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         branches_body(apply_branch),
     )
     .map(|((pre, _), (branches_span, branches))| {
-        Apply::Either(pre.span.join(branches_span), ApplyBranches(branches))
+        Apply::Case(pre.span.join(branches_span), ApplyBranches(branches))
     })
     .parse_next(input)
 }
@@ -1280,8 +1280,8 @@ fn cmd(input: &mut Input) -> Result<Option<Command>> {
     alt((
         alt((
             cmd_link,
-            cmd_choose,
-            cmd_either,
+            cmd_signal,
+            cmd_case,
             cmd_break,
             cmd_continue,
             cmd_begin,
@@ -1349,25 +1349,25 @@ fn cmd_receive(input: &mut Input) -> Result<Command> {
     .parse_next(input)
 }
 
-fn cmd_choose(input: &mut Input) -> Result<Command> {
+fn cmd_signal(input: &mut Input) -> Result<Command> {
     (t(TokenKind::Dot), (local_name, cmd))
         .map(|(pre, (name, cmd))| {
             let cmd = match cmd {
                 Some(cmd) => cmd,
                 None => noop_cmd(name.span.only_end()),
             };
-            Command::Choose(pre.span.join(cmd.span()), name, Box::new(cmd))
+            Command::Signal(pre.span.join(cmd.span()), name, Box::new(cmd))
         })
         .parse_next(input)
 }
 
-fn cmd_either(input: &mut Input) -> Result<Command> {
+fn cmd_case(input: &mut Input) -> Result<Command> {
     commit_after(
         (t(TokenKind::Dot), t(TokenKind::Case)),
         (branches_body(cmd_branch), opt(pass_process)),
     )
     .map(|((pre, _), ((branches_span, branches), pass_process))| {
-        Command::Either(
+        Command::Case(
             pre.span.join(branches_span),
             CommandBranches(branches),
             pass_process.map(Box::new),

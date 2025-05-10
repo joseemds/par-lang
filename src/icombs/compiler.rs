@@ -639,7 +639,7 @@ impl Compiler {
             Command::Signal(chosen, process) => {
                 let subject = self.use_variable(&name, true)?.0;
                 let Type::Choice(_, branches) = self.normalize_type(subject.ty.clone()) else {
-                    panic!("Unexpected type for Choose: {:?}", subject.ty);
+                    panic!("Unexpected type for Signal: {:?}", subject.ty);
                 };
                 let Some(branch_type) = branches.get(chosen) else {
                     unreachable!()
@@ -659,7 +659,7 @@ impl Compiler {
 
                 let mut branches = vec![];
                 let Type::Either(_, required_branches) = self.normalize_type(ty.clone()) else {
-                    panic!("Unexpected type for Match: {:?}", ty);
+                    panic!("Unexpected type for Case: {:?}", ty);
                 };
                 let mut choice_and_process: Vec<_> = names.iter().zip(processes.iter()).collect();
                 choice_and_process.sort_by_key(|k| k.0);
