@@ -43,18 +43,18 @@ pub enum TypeError {
     Telltypes(Span, IndexMap<LocalName, Type>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Operation {
-    Send(Span),
-    Receive(Span),
-    Choose(Span, LocalName),
-    Match(Span, #[allow(unused)] Arc<[LocalName]>),
-    Break(Span),
-    Continue(Span),
-    Begin(Span, Option<LocalName>),
-    Loop(Span, Option<LocalName>),
-    SendType(Span),
-    ReceiveType(Span),
+    Send,
+    Receive,
+    Choose,
+    Match,
+    Break,
+    Continue,
+    Begin,
+    Loop,
+    SendType,
+    ReceiveType,
 }
 
 #[derive(Clone, Debug)]
@@ -1637,7 +1637,7 @@ impl Context {
                 let Type::Function(_, argument_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Send(span.clone()),
+                        Operation::Send,
                         typ.clone(),
                     ));
                 };
@@ -1651,7 +1651,7 @@ impl Context {
                 let Type::Pair(_, parameter_type, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Receive(span.clone()),
+                        Operation::Receive,
                         typ.clone(),
                     ));
                 };
@@ -1676,7 +1676,7 @@ impl Context {
                 let Type::Choice(_, branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Choose(span.clone(), chosen.clone()),
+                        Operation::Choose,
                         typ.clone(),
                     ));
                 };
@@ -1696,7 +1696,7 @@ impl Context {
                 let Type::Either(_, required_branches) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Match(span.clone(), Arc::clone(branches)),
+                        Operation::Match,
                         typ.clone(),
                     ));
                 };
@@ -1755,7 +1755,7 @@ impl Context {
                 let Type::Continue(_) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Break(span.clone()),
+                        Operation::Break,
                         typ.clone(),
                     ));
                 };
@@ -1767,7 +1767,7 @@ impl Context {
                 let Type::Break(_) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Continue(span.clone()),
+                        Operation::Continue,
                         typ.clone(),
                     ));
                 };
@@ -1790,7 +1790,7 @@ impl Context {
                 else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Begin(span.clone(), label.clone()),
+                        Operation::Begin,
                         typ.clone(),
                     ));
                 };
@@ -1862,7 +1862,7 @@ impl Context {
                 if !matches!(typ, Type::Recursive { .. }) {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::Loop(span.clone(), label.clone()),
+                        Operation::Loop,
                         typ.clone(),
                     ));
                 }
@@ -1924,7 +1924,7 @@ impl Context {
                 let Type::Forall(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::SendType(span.clone()),
+                        Operation::SendType,
                         typ.clone(),
                     ));
                 };
@@ -1938,7 +1938,7 @@ impl Context {
                 let Type::Exists(_, type_name, then_type) = typ else {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
-                        Operation::ReceiveType(span.clone()),
+                        Operation::ReceiveType,
                         typ.clone(),
                     ));
                 };
