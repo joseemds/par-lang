@@ -66,16 +66,6 @@ impl TypeDef {
     }
 }
 
-impl Declaration {
-    pub fn external(name: &'static str, typ: Type) -> Self {
-        Self {
-            span: Default::default(),
-            name: GlobalName::external(None, name),
-            typ,
-        }
-    }
-}
-
 impl Definition<Arc<process::Expression<()>>> {
     pub fn external(
         name: &'static str,

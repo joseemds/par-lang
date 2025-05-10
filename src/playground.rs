@@ -633,14 +633,17 @@ fn fix_light_theme(mut theme: ColorTheme) -> ColorTheme {
     theme
 }
 
+#[allow(unused)]
 fn red() -> egui::Color32 {
     egui::Color32::from_hex("#DE3C4B").unwrap()
 }
 
+#[allow(unused)]
 fn green() -> egui::Color32 {
     egui::Color32::from_hex("#7ac74f").unwrap()
 }
 
+#[allow(unused)]
 fn blue() -> egui::Color32 {
     egui::Color32::from_hex("#118ab2").unwrap()
 }

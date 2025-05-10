@@ -200,7 +200,7 @@ impl TypedHandle {
         self.prepare_for_readback();
 
         match &self.tree.ty {
-            Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.int().await),
+            Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.nat().await),
             Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
             Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
 

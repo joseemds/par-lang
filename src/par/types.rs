@@ -18,8 +18,8 @@ pub enum TypeError {
     NameAlreadyDeclared(Span, Span, GlobalName),
     NameAlreadyDefined(Span, Span, GlobalName),
     DeclaredButNotDefined(Span, GlobalName),
-    NoMatchingRecursiveOrIterative(Span, Option<LocalName>),
-    SelfUsedInNegativePosition(Span, Option<LocalName>),
+    NoMatchingRecursiveOrIterative(Span),
+    SelfUsedInNegativePosition(Span),
     TypeNameNotDefined(Span, GlobalName),
     TypeVariableNotDefined(Span, LocalName),
     DependencyCycle(Span, Vec<GlobalName>),
@@ -27,17 +27,17 @@ pub enum TypeError {
     GlobalNameNotDefined(Span, GlobalName),
     VariableDoesNotExist(Span, LocalName),
     ShadowedObligation(Span, LocalName),
-    TypeMustBeKnownAtThisPoint(Span, LocalName),
-    ParameterTypeMustBeKnown(Span, LocalName, LocalName),
+    TypeMustBeKnownAtThisPoint(Span, #[allow(unused)] LocalName),
+    ParameterTypeMustBeKnown(Span, LocalName),
     CannotAssignFromTo(Span, Type, Type),
     UnfulfilledObligations(Span, Vec<LocalName>),
-    InvalidOperation(Span, Operation, Type),
+    InvalidOperation(Span, #[allow(unused)] Operation, Type),
     InvalidBranch(Span, LocalName, Type),
     MissingBranch(Span, LocalName, Type),
     RedundantBranch(Span, LocalName, Type),
     TypesCannotBeUnified(Type, Type),
-    NoSuchLoopPoint(Span, Option<LocalName>),
-    DoesNotDescendSubjectOfBegin(Span, Option<LocalName>),
+    NoSuchLoopPoint(Span, #[allow(unused)] Option<LocalName>),
+    DoesNotDescendSubjectOfBegin(Span, #[allow(unused)] Option<LocalName>),
     LoopVariableNotPreserved(Span, LocalName),
     LoopVariableChangedType(Span, LocalName, Type, Type),
     Telltypes(Span, IndexMap<LocalName, Type>),
@@ -61,26 +61,20 @@ pub enum Operation {
 pub enum Type {
     Primitive(Span, PrimitiveType),
     Chan(Span, Box<Self>),
-    /// type variable
     Var(Span, LocalName),
-    /// named type
     Name(Span, GlobalName, Vec<Self>),
     Pair(Span, Box<Self>, Box<Self>),
     Function(Span, Box<Self>, Box<Self>),
     Either(Span, BTreeMap<LocalName, Self>),
     Choice(Span, BTreeMap<LocalName, Self>),
-    /// ! (unit)
     Break(Span),
-    /// ? (bottom)
     Continue(Span),
     Recursive {
         span: Span,
-        /*
-        The ascendents of the type (denoted by the names of the respective loop points):
-        If you `begin` on a `recursive`, and it expands, so its `self`s get replaced by new
-        `recursive`s, these new `recursive`s will have as their *ascendent* the original `recursive`.
-        This is for totality checking.
-         */
+        // The ascendents of the type (denoted by the names of the respective loop points):
+        // If you `begin` on a `recursive`, and it expands, so its `self`s get replaced by new
+        // `recursive`s, these new `recursive`s will have as their *ascendent* the original `recursive`.
+        // This is for totality checking.
         asc: IndexSet<Option<LocalName>>,
         label: Option<LocalName>,
         body: Box<Self>,
@@ -103,6 +97,7 @@ pub enum PrimitiveType {
     String,
 }
 
+#[allow(unused)]
 impl Type {
     pub fn nat() -> Self {
         Self::Primitive(Default::default(), PrimitiveType::Nat)
@@ -378,16 +373,10 @@ impl TypeDefs {
             }
             Type::Self_(span, label) => {
                 if self_neg.contains(label) {
-                    return Err(TypeError::SelfUsedInNegativePosition(
-                        span.clone(),
-                        label.clone(),
-                    ));
+                    return Err(TypeError::SelfUsedInNegativePosition(span.clone()));
                 }
                 if !self_pos.contains(label) {
-                    return Err(TypeError::NoMatchingRecursiveOrIterative(
-                        span.clone(),
-                        label.clone(),
-                    ));
+                    return Err(TypeError::NoMatchingRecursiveOrIterative(span.clone()));
                 }
             }
 
@@ -2073,7 +2062,6 @@ impl Context {
                 let Some(param_type) = annotation else {
                     return Err(TypeError::ParameterTypeMustBeKnown(
                         span.clone(),
-                        subject.clone(),
                         parameter.clone(),
                     ));
                 };
@@ -2784,14 +2772,14 @@ impl TypeError {
                     name
                 )
             }
-            Self::NoMatchingRecursiveOrIterative(span, _) => {
+            Self::NoMatchingRecursiveOrIterative(span) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,
                     "This `self` has no matching `recursive` or `iterative`.",
                 )
             }
-            Self::SelfUsedInNegativePosition(span, _) => {
+            Self::SelfUsedInNegativePosition(span) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,
@@ -2851,7 +2839,7 @@ impl TypeError {
                 let labels = labels_from_span(code, span);
                 miette::miette!(labels = labels, "Type must be known at this point.")
             }
-            Self::ParameterTypeMustBeKnown(span, _, param) => {
+            Self::ParameterTypeMustBeKnown(span, param) => {
                 let labels = labels_from_span(code, span);
                 miette::miette!(
                     labels = labels,
@@ -3000,8 +2988,8 @@ impl TypeError {
             | Self::NameAlreadyDefined(span1, span2, _) => (span1.clone(), Some(span2.clone())),
 
             Self::DeclaredButNotDefined(span, _)
-            | Self::NoMatchingRecursiveOrIterative(span, _)
-            | Self::SelfUsedInNegativePosition(span, _)
+            | Self::NoMatchingRecursiveOrIterative(span)
+            | Self::SelfUsedInNegativePosition(span)
             | Self::TypeNameNotDefined(span, _)
             | Self::TypeVariableNotDefined(span, _)
             | Self::DependencyCycle(span, _)
@@ -3010,7 +2998,7 @@ impl TypeError {
             | Self::VariableDoesNotExist(span, _)
             | Self::ShadowedObligation(span, _)
             | Self::TypeMustBeKnownAtThisPoint(span, _)
-            | Self::ParameterTypeMustBeKnown(span, _, _)
+            | Self::ParameterTypeMustBeKnown(span, _)
             | Self::CannotAssignFromTo(span, _, _)
             | Self::UnfulfilledObligations(span, _)
             | Self::InvalidOperation(span, _, _)

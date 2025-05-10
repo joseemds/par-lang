@@ -30,16 +30,15 @@ enum VariableKind {
 #[derive(Clone, Debug)]
 pub enum Error {
     /// Error that is emitted when a variable that was never bound/captured is used
-    UnboundVar(Span, Var),
+    UnboundVar(Span, #[allow(unused)] Var),
     /// Error that is emitted when a linear variable is not used
     UnusedVar(Span),
-    UnexpectedType(Span, Type),
     GlobalNotFound(GlobalName),
     DependencyCycle {
         global: GlobalName,
         dependents: IndexSet<GlobalName>,
     },
-    UnguardedLoop(Span, Option<LocalName>),
+    UnguardedLoop(Span, #[allow(unused)] Option<LocalName>),
 }
 
 impl Error {
@@ -67,10 +66,9 @@ impl Error {
 
     pub fn spans(&self) -> (Span, Vec<Span>) {
         match self {
-            Error::UnboundVar(span, _)
-            | Error::UnusedVar(span)
-            | Error::UnexpectedType(span, _)
-            | Error::UnguardedLoop(span, _) => (span.clone(), vec![]),
+            Error::UnboundVar(span, _) | Error::UnusedVar(span) | Error::UnguardedLoop(span, _) => {
+                (span.clone(), vec![])
+            }
 
             Error::GlobalNotFound(name) => (name.span(), vec![]),
 
