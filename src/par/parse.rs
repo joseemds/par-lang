@@ -6,7 +6,7 @@ use super::{
     lexer::{lex, Input, Token, TokenKind},
     primitive::Primitive,
 };
-use crate::location::{Point, Span, Spanning};
+use crate::location::{Span, Spanning};
 use crate::par::{
     language::LocalName,
     program::{Declaration, Definition, Module, TypeDef},
@@ -318,13 +318,18 @@ pub fn parse_program(input: &str) -> std::result::Result<Module<Expression>, Syn
     let error_tok_span = error_tok.span.clone();
     Err(SyntaxError {
         span: error_tok_span,
-        source_span: SourceSpan::new(SourceOffset::from(error_tok_span.start.offset), {
-            match error_tok_span.len() {
-                // miette unicode format for 1 length span is a hard-to-notice line, so don't set length to 1.
-                x if x == 1 => 0,
-                x => x,
-            }
-        }),
+        source_span: match error_tok_span {
+            Span::None => SourceSpan::new(SourceOffset::from(0), input.len()),
+            span @ Span::At { start, .. } => SourceSpan::new(
+                SourceOffset::from(start.offset),
+                if span.len() == 1 {
+                    // miette unicode format for 1 length span is a hard-to-notice line, so don't set length to 1.
+                    0
+                } else {
+                    span.len()
+                },
+            ),
+        },
         help: e
             .inner()
             .context
@@ -786,7 +791,7 @@ fn expr_do(input: &mut Input) -> Result<Expression> {
         span: pre.span.join(expression.span()),
         process: match process {
             Some(process) => Box::new(process),
-            None => Box::new(Process::Noop(open.span.end)),
+            None => Box::new(Process::Noop(open.span.only_end())),
         },
         then: Box::new(expression),
     })
@@ -811,7 +816,7 @@ fn expr_fork(input: &mut Input) -> Result<Expression> {
             annotation,
             process: match process {
                 Some(process) => Box::new(process),
-                None => Box::new(Process::Noop(open.span.end)),
+                None => Box::new(Process::Noop(open.span.only_end())),
             },
         },
     )
@@ -1045,7 +1050,7 @@ fn apply_send(input: &mut Input) -> Result<Apply> {
     .map(|(open, (args, close, then))| {
         let then = match then {
             Some(apply) => apply,
-            None => Apply::Noop(close.span.end),
+            None => Apply::Noop(close.span.only_end()),
         };
         let span = open.span.join(then.span());
         args.into_iter().rfold(then, |then, arg| {
@@ -1060,7 +1065,7 @@ fn apply_choose(input: &mut Input) -> Result<Apply> {
         .map(|(pre, (chosen, then))| {
             let then = match then {
                 Some(then) => then,
-                None => Apply::Noop(chosen.span.end),
+                None => Apply::Noop(chosen.span.only_end()),
             };
             Apply::Choose(pre.span.join(then.span()), chosen, Box::new(then))
         })
@@ -1086,8 +1091,8 @@ fn apply_begin(input: &mut Input) -> Result<Apply> {
     .map(|((pre, _), (label, then))| {
         let then = match (&label, then) {
             (_, Some(then)) => then,
-            (Some(label), None) => Apply::Noop(label.span.end),
-            (None, None) => Apply::Noop(pre.span.end),
+            (Some(label), None) => Apply::Noop(label.span.only_end()),
+            (None, None) => Apply::Noop(pre.span.only_end()),
         };
         Apply::Begin {
             span: pre.span.join(then.span()),
@@ -1107,8 +1112,8 @@ fn apply_unfounded(input: &mut Input) -> Result<Apply> {
     .map(|((pre, _), (label, then))| {
         let then = match (&label, then) {
             (_, Some(then)) => then,
-            (Some(label), None) => Apply::Noop(label.span.end),
-            (None, None) => Apply::Noop(pre.span.end),
+            (Some(label), None) => Apply::Noop(label.span.only_end()),
+            (None, None) => Apply::Noop(pre.span.only_end()),
         };
         Apply::Begin {
             span: pre.span.join(then.span()),
@@ -1142,7 +1147,7 @@ fn apply_send_type(input: &mut Input) -> Result<Apply> {
     .map(|((open, _), (types, close, then))| {
         let then = match then {
             Some(apply) => apply,
-            None => Apply::Noop(close.span.end),
+            None => Apply::Noop(close.span.only_end()),
         };
         let span = open.span.join(then.span());
         types
@@ -1222,7 +1227,7 @@ fn proc_let(input: &mut Input) -> Result<Process> {
         pattern,
         then: match process {
             Some(process) => Box::new(process),
-            None => Box::new(Process::Noop(expression.span().end)),
+            None => Box::new(Process::Noop(expression.span().only_end())),
         },
         value: Box::new(expression),
     })
@@ -1236,7 +1241,7 @@ fn proc_telltypes(input: &mut Input) -> Result<Process> {
                 token.span,
                 match process {
                     Some(process) => Box::new(process),
-                    None => Box::new(Process::Noop(token.span.end)),
+                    None => Box::new(Process::Noop(token.span.only_end())),
                 },
             )
         })
@@ -1248,7 +1253,7 @@ fn global_command(input: &mut Input) -> Result<Process> {
         .map(|(name, cmd)| match cmd {
             Some(cmd) => Process::GlobalCommand(name, cmd),
             None => {
-                let noop_span = name.span.end;
+                let noop_span = name.span.only_end();
                 Process::GlobalCommand(name, noop_cmd(noop_span))
             }
         })
@@ -1260,15 +1265,15 @@ fn command(input: &mut Input) -> Result<Process> {
         .map(|(name, cmd)| match cmd {
             Some(cmd) => Process::Command(name, cmd),
             None => {
-                let noop_span = name.span.end;
+                let noop_span = name.span.only_end();
                 Process::Command(name, noop_cmd(noop_span))
             }
         })
         .parse_next(input)
 }
 
-fn noop_cmd(point: Point) -> Command {
-    Command::Then(Box::new(Process::Noop(point)))
+fn noop_cmd(span: Span) -> Command {
+    Command::Then(Box::new(Process::Noop(span)))
 }
 
 fn cmd(input: &mut Input) -> Result<Option<Command>> {
@@ -1316,7 +1321,7 @@ fn cmd_send(input: &mut Input) -> Result<Command> {
     .map(|(open, (expressions, close, cmd))| {
         let cmd = match cmd {
             Some(cmd) => cmd,
-            None => noop_cmd(close.span.end),
+            None => noop_cmd(close.span.only_end()),
         };
         let span = open.span.join(cmd.span());
         expressions.into_iter().rfold(cmd, |cmd, expression| {
@@ -1334,7 +1339,7 @@ fn cmd_receive(input: &mut Input) -> Result<Command> {
     .map(|(open, (patterns, close, cmd))| {
         let cmd = match cmd {
             Some(cmd) => cmd,
-            None => noop_cmd(close.span.end),
+            None => noop_cmd(close.span.only_end()),
         };
         let span = open.span.join(cmd.span());
         patterns.into_iter().rfold(cmd, |cmd, pattern| {
@@ -1349,7 +1354,7 @@ fn cmd_choose(input: &mut Input) -> Result<Command> {
         .map(|(pre, (name, cmd))| {
             let cmd = match cmd {
                 Some(cmd) => cmd,
-                None => noop_cmd(name.span.end),
+                None => noop_cmd(name.span.only_end()),
             };
             Command::Choose(pre.span.join(cmd.span()), name, Box::new(cmd))
         })
@@ -1381,7 +1386,10 @@ fn cmd_continue(input: &mut Input) -> Result<Command> {
     (t(TokenKind::Quest), opt(process))
         .map(|(token, process)| match process {
             Some(process) => Command::Continue(token.span.join(process.span()), Box::new(process)),
-            None => Command::Continue(token.span.clone(), Box::new(Process::Noop(token.span.end))),
+            None => Command::Continue(
+                token.span.clone(),
+                Box::new(Process::Noop(token.span.only_end())),
+            ),
         })
         .parse_next(input)
 }
@@ -1391,8 +1399,8 @@ fn cmd_begin(input: &mut Input) -> Result<Command> {
         .map(|((pre, _), (label, cmd))| {
             let cmd = match (&label, cmd) {
                 (_, Some(cmd)) => cmd,
-                (Some(label), None) => noop_cmd(label.span.end),
-                (None, None) => noop_cmd(pre.span.end),
+                (Some(label), None) => noop_cmd(label.span.only_end()),
+                (None, None) => noop_cmd(pre.span.only_end()),
             };
             Command::Begin {
                 span: pre.span.join(cmd.span()),
@@ -1412,8 +1420,8 @@ fn cmd_unfounded(input: &mut Input) -> Result<Command> {
     .map(|((pre, _), (label, cmd))| {
         let cmd = match (&label, cmd) {
             (_, Some(cmd)) => cmd,
-            (Some(label), None) => noop_cmd(label.span.end),
-            (None, None) => noop_cmd(pre.span.end),
+            (Some(label), None) => noop_cmd(label.span.only_end()),
+            (None, None) => noop_cmd(pre.span.only_end()),
         };
         Command::Begin {
             span: pre.span.join(cmd.span()),
@@ -1447,7 +1455,7 @@ fn cmd_send_type(input: &mut Input) -> Result<Command> {
     .map(|((open, _), (types, close, cmd))| {
         let cmd = match cmd {
             Some(cmd) => cmd,
-            None => noop_cmd(close.span.end),
+            None => noop_cmd(close.span.only_end()),
         };
         let span = open.span.join(cmd.span());
         types
@@ -1465,7 +1473,7 @@ fn cmd_recv_type(input: &mut Input) -> Result<Command> {
     .map(|((open, _), (names, close, cmd))| {
         let cmd = match cmd {
             Some(cmd) => cmd,
-            None => noop_cmd(close.span.end),
+            None => noop_cmd(close.span.only_end()),
         };
         let span = open.span.join(cmd.span());
         names.into_iter().rfold(cmd, |cmd, name| {
@@ -1500,7 +1508,7 @@ fn cmd_branch_then(input: &mut Input) -> Result<CommandBranch> {
             pre.span.join(close.span),
             match process {
                 Some(process) => process,
-                None => Process::Noop(open.span.end),
+                None => Process::Noop(open.span.only_end()),
             },
         )
     })
@@ -1521,7 +1529,7 @@ fn cmd_branch_bind_then(input: &mut Input) -> Result<CommandBranch> {
                 name,
                 match process {
                     Some(process) => process,
-                    None => Process::Noop(open.span.end),
+                    None => Process::Noop(open.span.only_end()),
                 },
             )
         })
@@ -1557,7 +1565,7 @@ fn cmd_branch_continue(input: &mut Input) -> Result<CommandBranch> {
             token.span.join(close.span),
             match process {
                 Some(process) => process,
-                None => Process::Noop(open.span.end),
+                None => Process::Noop(open.span.only_end()),
             },
         )
     })

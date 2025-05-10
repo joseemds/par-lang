@@ -543,10 +543,15 @@ impl Playground {
 
 /// Create a `LabeledSpan` without a label at `span`
 pub fn labels_from_span(_code: &str, span: &Span) -> Vec<LabeledSpan> {
-    vec![LabeledSpan::new_with_span(
-        None,
-        SourceSpan::new(SourceOffset::from(span.start.offset), span.len()),
-    )]
+    span.start()
+        .into_iter()
+        .map(|start| {
+            LabeledSpan::new_with_span(
+                None,
+                SourceSpan::new(SourceOffset::from(start.offset), span.len()),
+            )
+        })
+        .collect()
 }
 
 impl Error {

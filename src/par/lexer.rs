@@ -342,7 +342,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
             tokens.push(Token {
                 kind,
                 raw,
-                span: Span { start, end },
+                span: Span::At { start, end },
             });
         }
         Ok(tokens)
@@ -434,7 +434,7 @@ mod test {
                 Token {
                     kind: TokenKind::LowercaseIdentifier,
                     raw: "abc",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 0,
                             row: 0,
@@ -450,7 +450,7 @@ mod test {
                 Token {
                     kind: TokenKind::LowercaseIdentifier,
                     raw: "not_a_comment",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 27,
                             row: 4,
@@ -466,7 +466,7 @@ mod test {
                 Token {
                     kind: TokenKind::Unknown,
                     raw: "/",
-                    span: Span {
+                    span: Span::At {
                         start: Point {
                             offset: 48,
                             row: 4,

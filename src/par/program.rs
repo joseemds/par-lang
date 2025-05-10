@@ -2,7 +2,10 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use indexmap::IndexMap;
 
-use crate::{icombs::readback::Handle, location::Span};
+use crate::{
+    icombs::readback::Handle,
+    location::{Point, Span},
+};
 
 use super::{
     language::{GlobalName, LocalName},
@@ -211,7 +214,7 @@ impl<Expr> Default for Module<Expr> {
 pub struct NameWithType(pub String, pub Type);
 
 pub struct TypeOnHover {
-    sorted_pairs: Vec<(Span, NameWithType)>,
+    sorted_pairs: Vec<((Point, Point), NameWithType)>,
 }
 
 impl TypeOnHover {
@@ -219,24 +222,32 @@ impl TypeOnHover {
         let mut pairs = Vec::new();
 
         for (name, declaration) in &program.declarations {
-            pairs.push((
-                name.span,
-                NameWithType(format!("{}", name), declaration.typ.clone()),
-            ));
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(format!("{}", name), declaration.typ.clone()),
+                ));
+            }
         }
 
         for (name, definition) in &program.definitions {
-            pairs.push((
-                name.span,
-                NameWithType(format!("{}", name), definition.expression.get_type()),
-            ));
+            if let Some((start, end)) = name.span.points() {
+                pairs.push((
+                    (start, end),
+                    NameWithType(format!("{}", name), definition.expression.get_type()),
+                ));
+            }
             definition
                 .expression
-                .types_at_spans(&mut |span, name, typ| pairs.push((span, NameWithType(name, typ))));
+                .types_at_spans(&mut |span, name, typ| {
+                    if let Some((start, end)) = span.points() {
+                        pairs.push(((start, end), NameWithType(name, typ)))
+                    }
+                });
         }
 
-        pairs.sort_by_key(|(span, _)| span.start.offset);
-        pairs.dedup_by_key(|(span, _)| span.start.offset);
+        pairs.sort_by_key(|((start, _), _)| start.offset);
+        pairs.dedup_by_key(|((start, _), _)| start.offset);
 
         Self {
             sorted_pairs: pairs,
@@ -254,7 +265,7 @@ impl TypeOnHover {
         let (mut lo, mut hi) = (0, self.sorted_pairs.len());
         while lo + 1 < hi {
             let mi = (lo + hi) / 2;
-            let mp = self.sorted_pairs[mi].0.start;
+            let ((mp, _), _) = self.sorted_pairs[mi];
             if mp.row < row || (mp.row == row && mp.column <= column) {
                 lo = mi;
             } else {
@@ -262,13 +273,13 @@ impl TypeOnHover {
             }
         }
 
-        let (span, typ) = &self.sorted_pairs[lo];
+        let ((start, end), typ) = &self.sorted_pairs[lo];
 
         // check if queried (row, column) is in the found span
-        if row < span.start.row || (row == span.start.row && column < span.start.column) {
+        if row < start.row || (row == start.row && column < start.column) {
             return None;
         }
-        if span.end.row < row || (span.end.row == row && span.end.column < column) {
+        if end.row < row || (end.row == row && end.column < column) {
             return None;
         }
 

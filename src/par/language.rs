@@ -7,7 +7,7 @@ use super::{
     process::{self, Captures},
     types::Type,
 };
-use crate::location::{Point, Span, Spanning};
+use crate::location::{Span, Spanning};
 
 #[derive(Clone, Debug)]
 pub struct LocalName {
@@ -137,7 +137,7 @@ pub enum ConstructBranch {
 
 #[derive(Clone, Debug)]
 pub enum Apply {
-    Noop(Point),
+    Noop(Span),
     Send(Span, Box<Expression>, Box<Self>),
     Choose(Span, LocalName, Box<Self>),
     Either(Span, ApplyBranches),
@@ -174,7 +174,7 @@ pub enum Process {
     GlobalCommand(GlobalName, Command),
     Command(LocalName, Command),
     Telltypes(Span, Box<Self>),
-    Noop(Point),
+    Noop(Span),
 }
 
 #[derive(Clone, Debug)]
@@ -768,19 +768,16 @@ impl Spanning for ConstructBranch {
 impl Apply {
     pub fn compile(&self) -> Result<Arc<process::Process<()>>, CompileError> {
         Ok(match self {
-            Self::Noop(point) => {
-                let span = point.point_span();
-                Arc::new(process::Process::Do {
-                    span: span.clone(),
-                    name: LocalName::result(),
-                    typ: (),
-                    command: process::Command::Link(Arc::new(process::Expression::Variable(
-                        span.clone(),
-                        LocalName::object(),
-                        (),
-                    ))),
-                })
-            }
+            Self::Noop(span) => Arc::new(process::Process::Do {
+                span: span.clone(),
+                name: LocalName::result(),
+                typ: (),
+                command: process::Command::Link(Arc::new(process::Expression::Variable(
+                    span.clone(),
+                    LocalName::object(),
+                    (),
+                ))),
+            }),
 
             Self::Send(span, expression, apply) => {
                 let expression = expression.compile()?;
@@ -868,9 +865,8 @@ impl Spanning for Apply {
             | Self::Either(span, _)
             | Self::Begin { span, .. }
             | Self::Loop(span, _)
-            | Self::SendType(span, _, _) => span.clone(),
-
-            Self::Noop(point) => point.point_span(),
+            | Self::SendType(span, _, _)
+            | Self::Noop(span) => *span,
         }
     }
 }
@@ -976,9 +972,9 @@ impl Process {
                 process.compile(pass)?,
             )),
 
-            Self::Noop(point) => match pass {
+            Self::Noop(span) => match pass {
                 Some(process) => process,
-                None => Err(CompileError::MustEndProcess(point.point_span()))?,
+                None => Err(CompileError::MustEndProcess(*span))?,
             },
         })
     }
@@ -990,7 +986,7 @@ impl Spanning for Process {
             Self::Let { span, .. } | Self::Telltypes(span, _) => span.clone(),
             Self::GlobalCommand(_, command) => command.span(),
             Self::Command(_, command) => command.span(),
-            Self::Noop(point) => point.point_span(),
+            Self::Noop(span) => *span,
         }
     }
 }
