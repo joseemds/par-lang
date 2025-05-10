@@ -49,6 +49,8 @@ pub enum Tree {
     Primitive(Primitive),
     IntRequest(oneshot::Sender<BigInt>),
     StringRequest(oneshot::Sender<Substr>),
+    CharRequest(oneshot::Sender<char>),
+
     External(fn(Handle) -> Pin<Box<dyn Send + Future<Output = ()>>>),
 }
 
@@ -76,6 +78,7 @@ impl Tree {
             | Self::SignalRequest(_)
             | Self::IntRequest(_)
             | Self::StringRequest(_)
+            | Self::CharRequest(_)
             | Self::External(_) => {}
         }
     }
@@ -104,6 +107,7 @@ impl core::fmt::Debug for Tree {
             Self::SignalRequest(_) => f.debug_tuple("SignalRequest").field(&"<channel>").finish(),
             Self::IntRequest(_) => f.debug_tuple("IntRequest").field(&"<channel>").finish(),
             Self::StringRequest(_) => f.debug_tuple("StringRequest").field(&"<channel>").finish(),
+            Self::CharRequest(_) => f.debug_tuple("CharRequest").field(&"<channel>").finish(),
             Self::External(_) => f.debug_tuple("External").field(&"<function>").finish(),
         }
     }
@@ -123,6 +127,7 @@ impl Clone for Tree {
             Self::SignalRequest(_) => panic!("cannot clone Tree::SignalRequest"),
             Self::IntRequest(_) => panic!("cannot clone Tree::IntRequest"),
             Self::StringRequest(_) => panic!("cannot clone Tree::StringRequest"),
+            Self::CharRequest(_) => panic!("cannot clone Tree::CharRequest"),
             Self::External(f) => Self::External(*f),
         }
     }
@@ -383,12 +388,16 @@ impl Net {
 
     fn primitive_interact(&mut self, p: Primitive, tree: Tree) {
         match (p, tree) {
-            (Primitive::Int(i), Tree::IntRequest(c)) => {
-                c.send(i).expect("receiver dropped");
+            (Primitive::Int(i), Tree::IntRequest(resp)) => {
+                resp.send(i).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
-            (Primitive::String(s), Tree::StringRequest(c)) => {
-                c.send(s).expect("receiver dropped");
+            (Primitive::String(s), Tree::StringRequest(resp)) => {
+                resp.send(s).expect("receiver dropped");
+                self.rewrites.resp += 1;
+            }
+            (Primitive::Char(c), Tree::CharRequest(resp)) => {
+                resp.send(c).expect("receiver dropped");
                 self.rewrites.resp += 1;
             }
 
@@ -477,6 +486,7 @@ impl Net {
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
+            | Tree::CharRequest(_)
             | Tree::External(_) => {}
         }
     }
@@ -579,10 +589,13 @@ impl Net {
 
             Tree::Primitive(Primitive::Int(i)) => format!("{{{}}}", i),
             Tree::Primitive(Primitive::String(s)) => format!("{{{:?}}}", s),
+            Tree::Primitive(Primitive::Char(c)) => format!("{{{:?}}}", c),
 
             Tree::SignalRequest(_) => format!("<signal request>"),
             Tree::IntRequest(_) => format!("<int request>"),
             Tree::StringRequest(_) => format!("<string request>"),
+            Tree::CharRequest(_) => format!("<char request>"),
+
             Tree::External(_) => format!("<external>"),
         }
     }
@@ -621,6 +634,7 @@ impl Net {
             | Tree::SignalRequest(_)
             | Tree::IntRequest(_)
             | Tree::StringRequest(_)
+            | Tree::CharRequest(_)
             | Tree::External(_) => {}
         }
     }
@@ -697,6 +711,7 @@ impl Net {
             Tree::SignalRequest(_) => vec![],
             Tree::IntRequest(_) => vec![],
             Tree::StringRequest(_) => vec![],
+            Tree::CharRequest(_) => vec![],
             Tree::External(_) => vec![],
         }
     }

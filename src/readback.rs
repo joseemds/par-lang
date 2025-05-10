@@ -16,6 +16,7 @@ enum Request {
     Nat(String, Box<dyn Send + FnOnce(BigInt)>),
     Int(String, Box<dyn Send + FnOnce(BigInt)>),
     String(String, Box<dyn Send + FnOnce(Substr)>),
+    Char(String, Box<dyn Send + FnOnce(char)>),
     Choice(Vec<String>, Box<dyn Send + FnOnce(&str)>),
 }
 
@@ -32,6 +33,8 @@ pub enum Event {
     IntRequest(BigInt),
     String(Substr),
     StringRequest(Substr),
+    Char(char),
+    CharRequest(char),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +58,8 @@ impl Event {
             Self::IntRequest(_) => Polarity::Negative,
             Self::String(_) => Polarity::Positive,
             Self::StringRequest(_) => Polarity::Negative,
+            Self::Char(_) => Polarity::Positive,
+            Self::CharRequest(_) => Polarity::Negative,
         }
     }
 }
@@ -199,6 +204,32 @@ impl Element {
                                 }
                             }
 
+                            Request::Char(mut input, callback) => {
+                                let input_char = Some(&input)
+                                    .filter(|s| s.chars().count() == 1)
+                                    .and_then(|s| s.chars().next());
+                                let entered = ui
+                                    .horizontal(|ui| {
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut input)
+                                                .hint_text("Type a single character..."),
+                                        );
+                                        let button = ui.add_enabled(
+                                            input_char.is_some(),
+                                            egui::Button::small(egui::Button::new("OK")),
+                                        );
+                                        button.clicked() && input_char.is_some()
+                                    })
+                                    .inner;
+                                if entered {
+                                    let character = input_char.unwrap();
+                                    self.history.push(Event::CharRequest(character));
+                                    callback(character);
+                                } else {
+                                    self.request = Some(Request::Char(input, callback));
+                                }
+                            }
+
                             Request::Choice(signals, callback) => {
                                 let mut chosen = None;
                                 ui.vertical(|ui| {
@@ -274,6 +305,9 @@ impl Element {
                     Event::String(s) | Event::StringRequest(s) => {
                         ui.label(RichText::from(format!("{:?}", s)).strong().code());
                     }
+                    Event::Char(s) | Event::CharRequest(s) => {
+                        ui.label(RichText::from(format!("{:?}", s)).strong().code());
+                    }
                 }
             }
 
@@ -331,6 +365,20 @@ async fn handle_coroutine(
             TypedReadback::StringRequest(callback) => {
                 let mut lock = element.lock().expect("lock failed");
                 lock.request = Some(Request::String(String::new(), callback));
+                refresh();
+                break;
+            }
+
+            TypedReadback::Char(value) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.history.push(Event::Char(value));
+                refresh();
+                break;
+            }
+
+            TypedReadback::CharRequest(callback) => {
+                let mut lock = element.lock().expect("lock failed");
+                lock.request = Some(Request::Char(String::new(), callback));
                 refresh();
                 break;
             }

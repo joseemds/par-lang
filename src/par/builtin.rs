@@ -203,6 +203,15 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     );
 
     module.import(
+        "Char",
+        Module {
+            type_defs: vec![TypeDef::external("Char", &[], Type::char())],
+            declarations: vec![],
+            definitions: vec![],
+        },
+    );
+
+    module.import(
         "String",
         Module {
             type_defs: vec![TypeDef::external("String", &[], Type::string())],

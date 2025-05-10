@@ -95,6 +95,7 @@ pub enum PrimitiveType {
     Nat,
     Int,
     String,
+    Char,
 }
 
 #[allow(unused)]
@@ -109,6 +110,10 @@ impl Type {
 
     pub fn string() -> Self {
         Self::Primitive(Default::default(), PrimitiveType::String)
+    }
+
+    pub fn char() -> Self {
+        Self::Primitive(Default::default(), PrimitiveType::Char)
     }
 
     pub fn chan(t: Self) -> Self {
@@ -2448,6 +2453,7 @@ impl Type {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
+            Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;
@@ -2581,6 +2587,7 @@ impl Type {
             Self::Primitive(_, PrimitiveType::Nat) => write!(f, "Nat"),
             Self::Primitive(_, PrimitiveType::Int) => write!(f, "Int"),
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
+            Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
             Self::Chan(_, body) => {
                 write!(f, "chan ")?;

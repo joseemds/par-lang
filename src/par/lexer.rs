@@ -208,7 +208,7 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                 '\'' => {
                     any.parse_next(input)?;
                     let raw = (
-                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '"'))))
+                        repeat(0.., alt((preceded('\\', any), any.verify(|c| *c != '\''))))
                             .map(|()| ()),
                     )
                         .take()

@@ -735,7 +735,7 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
 }
 
 fn expr_literal(input: &mut Input) -> Result<Expression> {
-    alt((expr_literal_int, expr_literal_string)).parse_next(input)
+    alt((expr_literal_int, expr_literal_string, expr_literal_char)).parse_next(input)
 }
 
 fn expr_literal_int(input: &mut Input) -> Result<Expression> {
@@ -752,8 +752,22 @@ fn expr_literal_string(input: &mut Input) -> Result<Expression> {
     t(TokenKind::String)
         .map(|token| {
             // validated in lexer
-            let lit = unescaper::unescape(token.raw).unwrap();
-            Expression::Primitive(token.span, Primitive::String(Substr::from(lit)))
+            let value = unescaper::unescape(token.raw).unwrap();
+            Expression::Primitive(token.span, Primitive::String(Substr::from(value)))
+        })
+        .parse_next(input)
+}
+
+fn expr_literal_char(input: &mut Input) -> Result<Expression> {
+    t(TokenKind::Char)
+        .map(|token| {
+            // validated in lexer
+            let value = unescaper::unescape(token.raw)
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            Expression::Primitive(token.span, Primitive::Char(value))
         })
         .parse_next(input)
 }

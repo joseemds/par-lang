@@ -26,10 +26,12 @@ pub enum TypedReadback {
     Nat(BigInt),
     Int(BigInt),
     String(Substr),
+    Char(char),
 
     NatRequest(Box<dyn Send + FnOnce(BigInt)>),
     IntRequest(Box<dyn Send + FnOnce(BigInt)>),
     StringRequest(Box<dyn Send + FnOnce(Substr)>),
+    CharRequest(Box<dyn Send + FnOnce(char)>),
 
     Times(TypedHandle, TypedHandle),
     Par(TypedHandle, TypedHandle),
@@ -102,6 +104,23 @@ impl Handle {
             Tree::Primitive(Primitive::String(value)),
             self.tree.unwrap(),
         );
+        locked.notify_reducer();
+    }
+
+    pub async fn char(self) -> char {
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::CharRequest(tx), self.tree.unwrap());
+            locked.notify_reducer();
+            rx
+        };
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_char(self, value: char) {
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.unwrap());
         locked.notify_reducer();
     }
 
@@ -203,6 +222,7 @@ impl TypedHandle {
             Type::Primitive(_, PrimitiveType::Nat) => TypedReadback::Nat(self.nat().await),
             Type::Primitive(_, PrimitiveType::Int) => TypedReadback::Int(self.int().await),
             Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
+            Type::Primitive(_, PrimitiveType::Char) => TypedReadback::Char(self.char().await),
 
             typ @ Type::Chan(_, dual) => match dual.as_ref() {
                 Type::Primitive(_, PrimitiveType::Nat) => {
@@ -213,6 +233,9 @@ impl TypedHandle {
                 }
                 Type::Primitive(_, PrimitiveType::String) => {
                     TypedReadback::StringRequest(Box::new(move |value| self.provide_string(value)))
+                }
+                Type::Primitive(_, PrimitiveType::Char) => {
+                    TypedReadback::CharRequest(Box::new(move |value| self.provide_char(value)))
                 }
 
                 _ => panic!("Unsupported dual type for readback: {:?}", typ),
@@ -355,6 +378,40 @@ impl TypedHandle {
 
         let mut locked = self.net.lock().expect("lock failed");
         locked.link(Tree::Primitive(Primitive::String(value)), self.tree.tree);
+        locked.notify_reducer();
+    }
+
+    pub async fn char(mut self) -> char {
+        self.prepare_for_readback();
+        let Type::Primitive(_, PrimitiveType::Char) = self.tree.ty else {
+            panic!("Incorrect type for `char`: {:?}", self.tree.ty);
+        };
+
+        let rx = {
+            let (tx, rx) = oneshot::channel();
+            let mut locked = self.net.lock().expect("lock failed");
+            locked.link(Tree::CharRequest(tx), self.tree.tree);
+            locked.notify_reducer();
+            rx
+        };
+
+        rx.await.expect("sender dropped")
+    }
+
+    pub fn provide_char(mut self, value: char) {
+        self.prepare_for_readback();
+        let Type::Chan(span, dual) = self.tree.ty else {
+            panic!("Incorrect type for `provide_char`: {:?}", self.tree.ty);
+        };
+        let Type::Primitive(_, PrimitiveType::Char) = *dual else {
+            panic!(
+                "Incorrect type for `provide_char`: {:?}",
+                Type::Chan(span, dual)
+            );
+        };
+
+        let mut locked = self.net.lock().expect("lock failed");
+        locked.link(Tree::Primitive(Primitive::Char(value)), self.tree.tree);
         locked.notify_reducer();
     }
 

@@ -9,6 +9,7 @@ use super::types::Type;
 pub enum Primitive {
     Int(BigInt),
     String(Substr),
+    Char(char),
 }
 
 impl Primitive {
@@ -16,6 +17,7 @@ impl Primitive {
         match self {
             Self::Int(i) => write!(f, "{}", i),
             Self::String(s) => write!(f, "{:?}", s),
+            Self::Char(c) => write!(f, "{:?}", c),
         }
     }
 
@@ -24,6 +26,7 @@ impl Primitive {
             Self::Int(n) if n >= &BigInt::ZERO => Type::nat(),
             Self::Int(_) => Type::int(),
             Self::String(_) => Type::string(),
+            Self::Char(_) => Type::char(),
         }
     }
 }
