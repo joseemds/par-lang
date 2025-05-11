@@ -248,6 +248,11 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     ),
                     |handle| Box::pin(string_split_at(handle)),
                 ),
+                Definition::external(
+                    "Reader",
+                    Type::function(Type::string(), Type::name(None, "Reader", vec![])),
+                    |handle| Box::pin(string_reader(handle)),
+                ),
             ],
         },
     );
@@ -532,6 +537,41 @@ async fn string_split_at(mut handle: Handle) {
 
     handle.send().provide_string(left);
     handle.provide_string(right);
+}
+
+async fn string_reader(mut handle: Handle) {
+    let mut remainder = handle.receive().string().await;
+    loop {
+        match handle.case(3).await {
+            0 => {
+                // char
+                match remainder.chars().next() {
+                    Some(c) => {
+                        handle.signal(0, 2); // char
+                        handle.send().provide_char(c);
+                        remainder = match remainder.char_indices().skip(1).next() {
+                            Some((i, _)) => remainder.substr(i..),
+                            None => Substr::from(""),
+                        }
+                    }
+                    None => {
+                        handle.signal(1, 2); // empty
+                        handle.break_();
+                        break;
+                    }
+                }
+            }
+            1 => {
+                handle.break_();
+                break;
+            }
+            2 => {
+                handle.provide_string(remainder);
+                break;
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 async fn debug_log(mut handle: Handle) {
