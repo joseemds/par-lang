@@ -2,3 +2,12 @@ type Builder = iterative choice {
   .add(String) => self,
   .build => String,
 }
+
+type Reader = recursive iterative/attempt choice {
+  .close => !,
+  .remainder => String,
+  .char => either {
+    .empty!,
+    .char(Char.Char) self,
+  },
+}

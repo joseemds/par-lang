@@ -1,0 +1,8 @@
+type Class = either {
+  .ascii either {
+    .alphabetic!,
+    .alphanumeric!,
+    .digit!,
+  },
+  .whitespace!,
+}

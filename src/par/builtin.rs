@@ -70,6 +70,14 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     |handle| Box::pin(nat_max(handle)),
                 ),
                 Definition::external(
+                    "Clamp",
+                    Type::function(
+                        Type::int(),
+                        Type::function(Type::nat(), Type::function(Type::nat(), Type::nat())),
+                    ),
+                    |handle| Box::pin(nat_clamp(handle)),
+                ),
+                Definition::external(
                     "Equals",
                     Type::function(
                         Type::nat(),
@@ -164,6 +172,14 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     |handle| Box::pin(int_max(handle)),
                 ),
                 Definition::external(
+                    "Clamp",
+                    Type::function(
+                        Type::int(),
+                        Type::function(Type::int(), Type::function(Type::int(), Type::int())),
+                    ),
+                    |handle| Box::pin(int_clamp(handle)),
+                ),
+                Definition::external(
                     "Equals",
                     Type::function(
                         Type::int(),
@@ -207,7 +223,11 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module {
             type_defs: vec![TypeDef::external("Char", &[], Type::char())],
             declarations: vec![],
-            definitions: vec![],
+            definitions: vec![Definition::external(
+                "Code",
+                Type::function(Type::char(), Type::nat()),
+                |handle| Box::pin(char_code(handle)),
+            )],
         },
     );
 
@@ -301,6 +321,13 @@ async fn nat_max(mut handle: Handle) {
     let x = handle.receive().nat().await;
     let y = handle.receive().int().await;
     handle.provide_nat(x.max(y));
+}
+
+async fn nat_clamp(mut handle: Handle) {
+    let int = handle.receive().int().await;
+    let min = handle.receive().nat().await;
+    let max = handle.receive().nat().await;
+    handle.provide_nat(int.min(max).max(min));
 }
 
 async fn nat_equals(mut handle: Handle) {
@@ -411,6 +438,13 @@ async fn int_max(mut handle: Handle) {
     handle.provide_int(x.max(y));
 }
 
+async fn int_clamp(mut handle: Handle) {
+    let int = handle.receive().int().await;
+    let min = handle.receive().int().await;
+    let max = handle.receive().int().await;
+    handle.provide_int(int.min(max).max(min));
+}
+
 async fn int_equals(mut handle: Handle) {
     let x = handle.receive().int().await;
     let y = handle.receive().int().await;
@@ -450,6 +484,11 @@ async fn int_range(mut handle: Handle) {
 async fn int_to_string(mut handle: Handle) {
     let x = handle.receive().int().await;
     handle.provide_string(Substr::from(x.to_str_radix(10)))
+}
+
+async fn char_code(mut handle: Handle) {
+    let c = handle.receive().char().await;
+    handle.provide_nat(BigInt::from(c as u32))
 }
 
 async fn string_builder(mut handle: Handle) {
