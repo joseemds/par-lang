@@ -562,10 +562,12 @@ async fn string_reader(mut handle: Handle) {
                 }
             }
             1 => {
+                // close
                 handle.break_();
                 break;
             }
             2 => {
+                // remainder
                 handle.provide_string(remainder);
                 break;
             }
