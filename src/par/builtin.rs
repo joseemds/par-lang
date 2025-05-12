@@ -566,7 +566,7 @@ async fn string_reader(mut handle: Handle) {
                 }
                 2 => {
                     // match
-                    let (_, mut cp) = Pattern::receive(handle.receive()).await.compile();
+                    let (_, mut cp) = Pattern::readback(handle.receive()).await.compile();
                     let mut last_accepted_index = None;
                     for (i, c) in remainder.char_indices() {
                         match cp(c) {
@@ -601,55 +601,55 @@ async fn string_reader(mut handle: Handle) {
 type CompiledPattern = (bool, Box<dyn FnMut(char) -> Option<bool>>);
 
 enum Pattern {
-    S(Substr),
-    Seq(Arc<Self>, Arc<Self>),
+    Exact(Substr),
+    Concat(Arc<Self>, Arc<Self>),
     And(Arc<Self>, Arc<Self>),
     Or(Arc<Self>, Arc<Self>),
-    Star(Arc<Self>),
-    Plus(Arc<Self>),
+    Repeat(Arc<Self>),
+    Repeat1(Arc<Self>),
     Times(BigInt, Arc<Self>),
 }
 
 impl Pattern {
-    async fn receive(mut handle: Handle) -> Self {
+    async fn readback(mut handle: Handle) -> Self {
         match handle.case(7).await {
             0 => {
                 // and
-                let left = Box::pin(Self::receive(handle.receive())).await;
-                let right = Box::pin(Self::receive(handle)).await;
+                let left = Box::pin(Self::readback(handle.receive())).await;
+                let right = Box::pin(Self::readback(handle)).await;
                 Self::And(Arc::new(left), Arc::new(right))
             }
             1 => {
-                // or
-                let left = Box::pin(Self::receive(handle.receive())).await;
-                let right = Box::pin(Self::receive(handle)).await;
-                Self::Or(Arc::new(left), Arc::new(right))
+                // concat
+                let left = Box::pin(Self::readback(handle.receive())).await;
+                let right = Box::pin(Self::readback(handle)).await;
+                Self::Concat(Arc::new(left), Arc::new(right))
             }
             2 => {
-                // plus
-                let pat = Box::pin(Self::receive(handle)).await;
-                Self::Plus(Arc::new(pat))
+                // exact
+                let string = handle.string().await;
+                Self::Exact(string)
             }
             3 => {
-                // s
-                let string = handle.string().await;
-                Self::S(string)
+                // or
+                let left = Box::pin(Self::readback(handle.receive())).await;
+                let right = Box::pin(Self::readback(handle)).await;
+                Self::Or(Arc::new(left), Arc::new(right))
             }
             4 => {
-                // seq
-                let left = Box::pin(Self::receive(handle.receive())).await;
-                let right = Box::pin(Self::receive(handle)).await;
-                Self::Seq(Arc::new(left), Arc::new(right))
+                // repeat
+                let pat = Box::pin(Self::readback(handle)).await;
+                Self::Repeat(Arc::new(pat))
             }
             5 => {
-                // star
-                let pat = Box::pin(Self::receive(handle)).await;
-                Self::Star(Arc::new(pat))
+                // repeat1
+                let pat = Box::pin(Self::readback(handle)).await;
+                Self::Repeat1(Arc::new(pat))
             }
             6 => {
                 // times
                 let number = handle.receive().nat().await;
-                let pat = Box::pin(Self::receive(handle)).await;
+                let pat = Box::pin(Self::readback(handle)).await;
                 Self::Times(number, Arc::new(pat))
             }
             _ => unreachable!(),
@@ -658,7 +658,7 @@ impl Pattern {
 
     fn compile(&self) -> CompiledPattern {
         match self {
-            Self::S(string) => {
+            Self::Exact(string) => {
                 let mut remaining = string.clone();
                 (
                     remaining.is_empty(),
@@ -679,7 +679,7 @@ impl Pattern {
                 )
             }
 
-            Self::Seq(p1, p2) => {
+            Self::Concat(p1, p2) => {
                 let (empty1, mut cp1) = p1.compile();
                 let p2 = Arc::clone(p2);
                 let mut cp2s = Vec::new();
@@ -734,12 +734,12 @@ impl Pattern {
                 )
             }
 
-            Self::Star(p) => {
-                let (_, cp) = Self::Plus(Arc::clone(p)).compile();
+            Self::Repeat(p) => {
+                let (_, cp) = Self::Repeat1(Arc::clone(p)).compile();
                 (true, cp)
             }
 
-            Self::Plus(p) => {
+            Self::Repeat1(p) => {
                 let (empty, cp) = p.compile();
                 let p = Arc::clone(p);
                 let mut cps = vec![cp];
@@ -772,10 +772,10 @@ impl Pattern {
             }
 
             Self::Times(n, p) => {
-                let mut repeated = Self::S(Substr::from(""));
+                let mut repeated = Self::Exact(Substr::from(""));
                 let mut remaining = n.clone();
                 while remaining > BigInt::ZERO {
-                    repeated = Self::Seq(Arc::clone(p), Arc::new(repeated));
+                    repeated = Self::Concat(Arc::clone(p), Arc::new(repeated));
                     remaining -= 1;
                 }
                 repeated.compile()
