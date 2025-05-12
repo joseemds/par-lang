@@ -3,11 +3,25 @@ type Builder = iterative choice {
   .build => String,
 }
 
-type Reader = recursive iterative/attempt choice {
-  .close => !,
-  .remainder => String,
-  .char => either {
-    .empty!,
-    .char(Char.Char) self,
-  },
+type Reader = recursive either {
+  .empty!,
+  .some iterative/attempt choice {
+    .close => !,
+    .remainder => String,
+    .char => (Char.Char) self,
+    .match(Pattern) => either {
+      .fail self/attempt,
+      .match(String) self,
+    }
+  }
+}
+
+type Pattern = recursive either {
+  .s String,
+  .seq(self) self,
+  .and(self) self,
+  .or(self) self,
+  .star self,
+  .plus self,
+  .times(Nat.Nat) self,
 }

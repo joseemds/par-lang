@@ -541,37 +541,245 @@ async fn string_split_at(mut handle: Handle) {
 
 async fn string_reader(mut handle: Handle) {
     let mut remainder = handle.receive().string().await;
+
     loop {
-        match handle.case(3).await {
-            0 => {
-                // char
-                match remainder.chars().next() {
-                    Some(c) => {
-                        handle.signal(0, 2); // char
-                        handle.send().provide_char(c);
-                        remainder = match remainder.char_indices().skip(1).next() {
-                            Some((i, _)) => remainder.substr(i..),
-                            None => Substr::from(""),
+        if remainder.is_empty() {
+            handle.signal(0, 2); // empty
+            handle.break_();
+            return;
+        }
+
+        handle.signal(1, 2); // some
+        loop {
+            match handle.case(4).await {
+                0 => {
+                    // char
+                    let c = remainder.chars().next().unwrap();
+                    handle.send().provide_char(c);
+                    remainder = remainder.substr(c.len_utf8()..);
+                    break;
+                }
+                1 => {
+                    // close
+                    handle.break_();
+                    return;
+                }
+                2 => {
+                    // match
+                    let (_, mut cp) = Pattern::receive(handle.receive()).await.compile();
+                    let mut last_accepted_index = None;
+                    for (i, c) in remainder.char_indices() {
+                        match cp(c) {
+                            Some(true) => last_accepted_index = Some(i + c.len_utf8()),
+                            Some(false) => {}
+                            None => break,
                         }
                     }
-                    None => {
-                        handle.signal(1, 2); // empty
-                        handle.break_();
-                        break;
+                    match last_accepted_index {
+                        Some(i) => {
+                            handle.signal(1, 2); // match
+                            handle.send().provide_string(remainder.substr(..i));
+                            remainder = remainder.substr(i..);
+                            break;
+                        }
+                        None => {
+                            handle.signal(0, 2); // fail
+                        }
                     }
                 }
+                3 => {
+                    // remainder
+                    handle.provide_string(remainder);
+                    return;
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+type CompiledPattern = (bool, Box<dyn FnMut(char) -> Option<bool>>);
+
+enum Pattern {
+    S(Substr),
+    Seq(Arc<Self>, Arc<Self>),
+    And(Arc<Self>, Arc<Self>),
+    Or(Arc<Self>, Arc<Self>),
+    Star(Arc<Self>),
+    Plus(Arc<Self>),
+    Times(BigInt, Arc<Self>),
+}
+
+impl Pattern {
+    async fn receive(mut handle: Handle) -> Self {
+        match handle.case(7).await {
+            0 => {
+                // and
+                let left = Box::pin(Self::receive(handle.receive())).await;
+                let right = Box::pin(Self::receive(handle)).await;
+                Self::And(Arc::new(left), Arc::new(right))
             }
             1 => {
-                // close
-                handle.break_();
-                break;
+                // or
+                let left = Box::pin(Self::receive(handle.receive())).await;
+                let right = Box::pin(Self::receive(handle)).await;
+                Self::Or(Arc::new(left), Arc::new(right))
             }
             2 => {
-                // remainder
-                handle.provide_string(remainder);
-                break;
+                // plus
+                let pat = Box::pin(Self::receive(handle)).await;
+                Self::Plus(Arc::new(pat))
+            }
+            3 => {
+                // s
+                let string = handle.string().await;
+                Self::S(string)
+            }
+            4 => {
+                // seq
+                let left = Box::pin(Self::receive(handle.receive())).await;
+                let right = Box::pin(Self::receive(handle)).await;
+                Self::Seq(Arc::new(left), Arc::new(right))
+            }
+            5 => {
+                // star
+                let pat = Box::pin(Self::receive(handle)).await;
+                Self::Star(Arc::new(pat))
+            }
+            6 => {
+                // times
+                let number = handle.receive().nat().await;
+                let pat = Box::pin(Self::receive(handle)).await;
+                Self::Times(number, Arc::new(pat))
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn compile(&self) -> CompiledPattern {
+        match self {
+            Self::S(string) => {
+                let mut remaining = string.clone();
+                (
+                    remaining.is_empty(),
+                    Box::new(move |c| {
+                        let Some(d) = remaining.chars().next() else {
+                            return None;
+                        };
+                        remaining = remaining.substr(d.len_utf8()..);
+                        if remaining.is_empty() {
+                            return Some(c == d);
+                        };
+                        if c != d {
+                            remaining = Substr::from("");
+                            return None;
+                        }
+                        Some(false)
+                    }),
+                )
+            }
+
+            Self::Seq(p1, p2) => {
+                let (empty1, mut cp1) = p1.compile();
+                let p2 = Arc::clone(p2);
+                let mut cp2s = Vec::new();
+                if empty1 {
+                    cp2s.push(p2.compile());
+                }
+                (
+                    empty1 && cp2s.iter().any(|&(empty2, _)| empty2),
+                    Box::new(move |c| {
+                        let mut to_remove = Vec::new();
+                        for (i, (accept2, cp2)) in cp2s.iter_mut().enumerate() {
+                            match cp2(c) {
+                                Some(answer2) => *accept2 = answer2,
+                                None => to_remove.push(i),
+                            }
+                        }
+                        for i in to_remove.into_iter().rev() {
+                            let _ = cp2s.swap_remove(i);
+                        }
+                        let answer1 = cp1(c);
+                        if answer1 == Some(true) {
+                            cp2s.push(p2.compile());
+                        }
+                        if answer1 == None && cp2s.is_empty() {
+                            return None;
+                        }
+                        Some(cp2s.iter().any(|&(accept2, _)| accept2))
+                    }),
+                )
+            }
+
+            Self::And(p1, p2) => {
+                let ((empty1, mut cp1), (empty2, mut cp2)) = (p1.compile(), p2.compile());
+                (
+                    empty1 && empty2,
+                    Box::new(move |c| match (cp1(c), cp2(c)) {
+                        (Some(accept1), Some(accept2)) => Some(accept1 && accept2),
+                        (None, _) | (_, None) => None,
+                    }),
+                )
+            }
+
+            Self::Or(p1, p2) => {
+                let ((empty1, mut cp1), (empty2, mut cp2)) = (p1.compile(), p2.compile());
+                (
+                    empty1 || empty2,
+                    Box::new(move |c| match (cp1(c), cp2(c)) {
+                        (Some(accept1), Some(accept2)) => Some(accept1 || accept2),
+                        (Some(accept), None) | (None, Some(accept)) => Some(accept),
+                        (None, None) => None,
+                    }),
+                )
+            }
+
+            Self::Star(p) => {
+                let (_, cp) = Self::Plus(Arc::clone(p)).compile();
+                (true, cp)
+            }
+
+            Self::Plus(p) => {
+                let (empty, cp) = p.compile();
+                let p = Arc::clone(p);
+                let mut cps = vec![cp];
+                (
+                    empty,
+                    Box::new(move |c| {
+                        if cps.is_empty() {
+                            return None;
+                        }
+                        let mut accept = false;
+                        let mut new_cps = Vec::new();
+                        let mut to_remove = Vec::new();
+                        for (i, cp) in cps.iter_mut().enumerate() {
+                            match cp(c) {
+                                Some(true) => {
+                                    accept = true;
+                                    new_cps.push(p.compile().1);
+                                }
+                                Some(false) => {}
+                                None => to_remove.push(i),
+                            }
+                        }
+                        for i in to_remove.into_iter().rev() {
+                            let _ = cps.swap_remove(i);
+                        }
+                        cps.extend(new_cps);
+                        Some(accept)
+                    }),
+                )
+            }
+
+            Self::Times(n, p) => {
+                let mut repeated = Self::S(Substr::from(""));
+                let mut remaining = n.clone();
+                while remaining > BigInt::ZERO {
+                    repeated = Self::Seq(Arc::clone(p), Arc::new(repeated));
+                    remaining -= 1;
+                }
+                repeated.compile()
+            }
         }
     }
 }
@@ -590,7 +798,7 @@ async fn console_open(mut handle: Handle) {
                 break;
             }
             1 => {
-                // printLine
+                // print
                 println!("{}", handle.receive().string().await);
             }
             _ => unreachable!(),
