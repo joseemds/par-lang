@@ -12,11 +12,12 @@ type Reader = recursive either {
     .match(Pattern) => either {
       .fail self/attempt,
       .match(String) self,
-    }
+    },
   }
 }
 
 type Pattern = recursive either {
+  .empty!,
   .exact String,
   .concat(self) self,
   .and(self) self,
