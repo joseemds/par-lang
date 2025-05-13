@@ -1,5 +1,7 @@
 type Class = either {
+  .any!,
   .ascii either {
+    .any!,
     .alphabetic!,
     .alphanumeric!,
     .digit!,
