@@ -566,11 +566,13 @@ async fn string_reader(mut handle: Handle) {
                 }
                 2 => {
                     // match
-                    let (_, mut cp) = Pattern::readback(handle.receive()).await.compile();
+                    let mut m =
+                        Machine::start(Arc::new(Pattern::readback(handle.receive()).await), 0);
                     let mut last_accepted_index = None;
-                    for (i, c) in remainder.char_indices() {
-                        match cp(c) {
-                            Some(true) => last_accepted_index = Some(i + c.len_utf8()),
+                    for (pos, ch) in remainder.char_indices() {
+                        m.advance(pos, ch);
+                        match m.accepts() {
+                            Some(true) => last_accepted_index = Some(pos + ch.len_utf8()),
                             Some(false) => {}
                             None => break,
                         }
@@ -598,21 +600,20 @@ async fn string_reader(mut handle: Handle) {
     }
 }
 
-type CompiledPattern = (bool, Box<dyn FnMut(char) -> Option<bool>>);
-
+#[derive(Debug, Clone)]
 enum Pattern {
+    Empty,
     Exact(Substr),
     Concat(Arc<Self>, Arc<Self>),
     And(Arc<Self>, Arc<Self>),
     Or(Arc<Self>, Arc<Self>),
     Repeat(Arc<Self>),
     Repeat1(Arc<Self>),
-    Times(BigInt, Arc<Self>),
 }
 
 impl Pattern {
     async fn readback(mut handle: Handle) -> Self {
-        match handle.case(7).await {
+        match handle.case(8).await {
             0 => {
                 // and
                 let left = Box::pin(Self::readback(handle.receive())).await;
@@ -626,161 +627,214 @@ impl Pattern {
                 Self::Concat(Arc::new(left), Arc::new(right))
             }
             2 => {
+                // empty
+                handle.continue_();
+                Self::Empty
+            }
+            3 => {
                 // exact
                 let string = handle.string().await;
                 Self::Exact(string)
             }
-            3 => {
+            4 => {
                 // or
                 let left = Box::pin(Self::readback(handle.receive())).await;
                 let right = Box::pin(Self::readback(handle)).await;
                 Self::Or(Arc::new(left), Arc::new(right))
             }
-            4 => {
+            5 => {
                 // repeat
                 let pat = Box::pin(Self::readback(handle)).await;
                 Self::Repeat(Arc::new(pat))
             }
-            5 => {
+            6 => {
                 // repeat1
                 let pat = Box::pin(Self::readback(handle)).await;
                 Self::Repeat1(Arc::new(pat))
             }
-            6 => {
+            7 => {
                 // times
                 let number = handle.receive().nat().await;
                 let pat = Box::pin(Self::readback(handle)).await;
-                Self::Times(number, Arc::new(pat))
+                let mut repeated = Self::Empty;
+                let mut remaining = number;
+                while remaining > BigInt::ZERO {
+                    repeated = Self::Concat(Arc::new(pat.clone()), Arc::new(repeated));
+                    remaining -= 1;
+                }
+                repeated
             }
             _ => unreachable!(),
         }
     }
+}
 
-    fn compile(&self) -> CompiledPattern {
-        match self {
-            Self::Exact(string) => {
-                let mut remaining = string.clone();
-                (
-                    remaining.is_empty(),
-                    Box::new(move |c| {
-                        let Some(d) = remaining.chars().next() else {
-                            return None;
-                        };
-                        remaining = remaining.substr(d.len_utf8()..);
-                        if remaining.is_empty() {
-                            return Some(c == d);
-                        };
-                        if c != d {
-                            remaining = Substr::from("");
-                            return None;
-                        }
-                        Some(false)
-                    }),
-                )
+#[derive(Debug)]
+struct Machine {
+    pattern: Arc<Pattern>,
+    state: State,
+    start: usize,
+}
+
+impl Machine {
+    fn start(pattern: Arc<Pattern>, start: usize) -> Self {
+        let state = match pattern.as_ref() {
+            Pattern::Empty => State::Init,
+
+            Pattern::Exact(_) => State::Index(0),
+
+            Pattern::Concat(p1, p2) => {
+                let prefix = Self::start(Arc::clone(p1), start);
+                let suffixes = if prefix.accepts() == Some(true) {
+                    vec![Self::start(Arc::clone(p2), start)]
+                } else {
+                    vec![]
+                };
+                State::Concat(Box::new(prefix), suffixes)
             }
 
-            Self::Concat(p1, p2) => {
-                let (empty1, mut cp1) = p1.compile();
-                let p2 = Arc::clone(p2);
-                let mut cp2s = Vec::new();
-                if empty1 {
-                    cp2s.push(p2.compile());
-                }
-                (
-                    empty1 && cp2s.iter().any(|&(empty2, _)| empty2),
-                    Box::new(move |c| {
-                        let mut to_remove = Vec::new();
-                        for (i, (accept2, cp2)) in cp2s.iter_mut().enumerate() {
-                            match cp2(c) {
-                                Some(answer2) => *accept2 = answer2,
-                                None => to_remove.push(i),
-                            }
-                        }
-                        for i in to_remove.into_iter().rev() {
-                            let _ = cp2s.swap_remove(i);
-                        }
-                        let answer1 = cp1(c);
-                        if answer1 == Some(true) {
-                            cp2s.push(p2.compile());
-                        }
-                        if answer1 == None && cp2s.is_empty() {
-                            return None;
-                        }
-                        Some(cp2s.iter().any(|&(accept2, _)| accept2))
-                    }),
-                )
-            }
+            Pattern::And(p1, p2) | Pattern::Or(p1, p2) => State::Pair(
+                Box::new(Self::start(Arc::clone(p1), start)),
+                Box::new(Self::start(Arc::clone(p2), start)),
+            ),
 
-            Self::And(p1, p2) => {
-                let ((empty1, mut cp1), (empty2, mut cp2)) = (p1.compile(), p2.compile());
-                (
-                    empty1 && empty2,
-                    Box::new(move |c| match (cp1(c), cp2(c)) {
-                        (Some(accept1), Some(accept2)) => Some(accept1 && accept2),
-                        (None, _) | (_, None) => None,
-                    }),
-                )
-            }
+            Pattern::Repeat(_) => State::Init,
+            Pattern::Repeat1(p) => State::Heap(vec![Self::start(Arc::clone(p), start)]),
+        };
 
-            Self::Or(p1, p2) => {
-                let ((empty1, mut cp1), (empty2, mut cp2)) = (p1.compile(), p2.compile());
-                (
-                    empty1 || empty2,
-                    Box::new(move |c| match (cp1(c), cp2(c)) {
-                        (Some(accept1), Some(accept2)) => Some(accept1 || accept2),
-                        (Some(accept), None) | (None, Some(accept)) => Some(accept),
-                        (None, None) => None,
-                    }),
-                )
-            }
-
-            Self::Repeat(p) => {
-                let (_, cp) = Self::Repeat1(Arc::clone(p)).compile();
-                (true, cp)
-            }
-
-            Self::Repeat1(p) => {
-                let (empty, cp) = p.compile();
-                let p = Arc::clone(p);
-                let mut cps = vec![cp];
-                (
-                    empty,
-                    Box::new(move |c| {
-                        if cps.is_empty() {
-                            return None;
-                        }
-                        let mut accept = false;
-                        let mut new_cps = Vec::new();
-                        let mut to_remove = Vec::new();
-                        for (i, cp) in cps.iter_mut().enumerate() {
-                            match cp(c) {
-                                Some(true) => {
-                                    accept = true;
-                                    new_cps.push(p.compile().1);
-                                }
-                                Some(false) => {}
-                                None => to_remove.push(i),
-                            }
-                        }
-                        for i in to_remove.into_iter().rev() {
-                            let _ = cps.swap_remove(i);
-                        }
-                        cps.extend(new_cps);
-                        Some(accept)
-                    }),
-                )
-            }
-
-            Self::Times(n, p) => {
-                let mut repeated = Self::Exact(Substr::from(""));
-                let mut remaining = n.clone();
-                while remaining > BigInt::ZERO {
-                    repeated = Self::Concat(Arc::clone(p), Arc::new(repeated));
-                    remaining -= 1;
-                }
-                repeated.compile()
-            }
+        Self {
+            pattern,
+            state,
+            start,
         }
+    }
+
+    fn accepts(&self) -> Option<bool> {
+        match (self.pattern.as_ref(), &self.state) {
+            (_, State::Halt) => None,
+
+            (Pattern::Empty, State::Init) => Some(true),
+
+            (Pattern::Exact(s), State::Index(i)) => Some(s.len() == *i),
+
+            (Pattern::Concat(_, _), State::Concat(_, heap)) => {
+                heap.iter().filter_map(Self::accepts).max()
+            }
+
+            (Pattern::And(_, _), State::Pair(m1, m2)) => match (m1.accepts(), m2.accepts()) {
+                (Some(a1), Some(a2)) => Some(a1 && a2),
+                (None, _) | (_, None) => None,
+            },
+
+            (Pattern::Or(_, _), State::Pair(m1, m2)) => match (m1.accepts(), m2.accepts()) {
+                (Some(a1), Some(a2)) => Some(a1 || a2),
+                (None, a) | (a, None) => a,
+            },
+
+            (Pattern::Repeat(_), State::Init) => Some(true),
+            (Pattern::Repeat(_), State::Heap(heap)) => heap.iter().filter_map(Self::accepts).max(),
+
+            (Pattern::Repeat1(_), State::Heap(heap)) => heap.iter().filter_map(Self::accepts).max(),
+
+            (p, s) => unreachable!("invalid combination of pattern {:?} and state {:?}", p, s),
+        }
+    }
+
+    fn advance(&mut self, pos: usize, ch: char) {
+        match (self.pattern.as_ref(), &mut self.state) {
+            (_, State::Halt) => {}
+
+            (Pattern::Empty, State::Init) => self.state = State::Halt,
+
+            (Pattern::Exact(s), State::Index(i)) => {
+                if s.substr(*i..).chars().next() == Some(ch) {
+                    *i += 1;
+                } else {
+                    self.state = State::Halt;
+                }
+            }
+
+            (Pattern::Concat(_, p), State::Concat(m, heap)) => {
+                m.advance(pos, ch);
+                for m in heap.iter_mut() {
+                    m.advance(pos, ch);
+                }
+                heap.retain(|m| m.state != State::Halt);
+                if m.accepts() == Some(true) {
+                    heap.push(Self::start(Arc::clone(p), pos + ch.len_utf8()));
+                }
+                heap.sort();
+                heap.dedup();
+                if m.state == State::Halt && heap.is_empty() {
+                    self.state = State::Halt;
+                }
+            }
+
+            (Pattern::And(_, _), State::Pair(m1, m2)) => {
+                m1.advance(pos, ch);
+                m2.advance(pos, ch);
+                if m1.state == State::Halt || m2.state == State::Halt {
+                    self.state = State::Halt;
+                }
+            }
+
+            (Pattern::Or(_, _), State::Pair(m1, m2)) => {
+                m1.advance(pos, ch);
+                m2.advance(pos, ch);
+                if m1.state == State::Halt && m2.state == State::Halt {
+                    self.state = State::Halt;
+                }
+            }
+
+            (Pattern::Repeat(p), State::Init) => {
+                let mut m = Self::start(Arc::clone(p), pos);
+                m.advance(pos, ch);
+                self.state = State::Heap(vec![m])
+            }
+            (Pattern::Repeat(p) | Pattern::Repeat1(p), State::Heap(heap)) => {
+                if heap.iter().any(|m| m.accepts() == Some(true)) {
+                    heap.push(Self::start(Arc::clone(p), pos));
+                }
+                for m in heap.iter_mut() {
+                    m.advance(pos, ch);
+                }
+                heap.retain(|m| m.state != State::Halt);
+                heap.sort();
+                heap.dedup();
+                if heap.is_empty() {
+                    self.state = State::Halt;
+                }
+            }
+
+            (p, s) => unreachable!("invalid combination of pattern {:?} and state {:?}", p, s),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum State {
+    Init,
+    Halt,
+    Index(usize),
+    Pair(Box<Machine>, Box<Machine>),
+    Heap(Vec<Machine>),
+    Concat(Box<Machine>, Vec<Machine>),
+}
+
+impl PartialEq for Machine {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+impl Eq for Machine {}
+impl PartialOrd for Machine {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.state.partial_cmp(&other.state)
+    }
+}
+impl Ord for Machine {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.state.cmp(&other.state)
     }
 }
 
