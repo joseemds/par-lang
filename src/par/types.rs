@@ -2051,6 +2051,7 @@ impl Context {
         Ok(match command {
             Command::Link(expression) => {
                 let (expression, typ) = self.infer_expression(Some(subject), expression)?;
+                self.cannot_have_obligations(span)?;
                 (Command::Link(expression), typ.dual(&self.type_defs)?)
             }
 
