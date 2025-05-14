@@ -767,7 +767,7 @@ impl MachineInner {
 
             (Pattern::Exact(s), State::Index(i)) => {
                 if s.substr(*i..).chars().next() == Some(ch) {
-                    *i += 1;
+                    *i += ch.len_utf8();
                 } else {
                     self.state = State::Halt;
                 }
