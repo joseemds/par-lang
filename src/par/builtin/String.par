@@ -9,10 +9,14 @@ type Reader = recursive either {
     .close => !,
     .remainder => String,
     .char => (Char.Char) self,
-    .match(Pattern) => either {
+    .match(Pattern, Pattern) => either {
       .fail self/attempt,
-      .match(String) self,
+      .match(String, String) self,
     },
+    .matchEnd(Pattern, Pattern) => either {
+      .fail self/attempt,
+      .match(Self, Self)!,
+    }
   }
 }
 

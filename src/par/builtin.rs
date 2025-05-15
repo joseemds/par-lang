@@ -551,7 +551,7 @@ async fn string_reader(mut handle: Handle) {
 
         handle.signal(1, 2); // some
         loop {
-            match handle.case(4).await {
+            match handle.case(5).await {
                 0 => {
                     // char
                     let c = remainder.chars().next().unwrap();
@@ -566,21 +566,33 @@ async fn string_reader(mut handle: Handle) {
                 }
                 2 => {
                     // match
-                    let mut m = Machine::start(Pattern::readback(handle.receive()).await);
-                    let mut last_accepted_index = None;
+                    let prefix = Pattern::readback(handle.receive()).await;
+                    let suffix = Pattern::readback(handle.receive()).await;
+                    let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                    let mut best_match = None;
                     for (pos, ch) in remainder.char_indices() {
+                        match (m.leftmost_feasible_split(pos), best_match) {
+                            (Some(fi), Some((bi, _))) if fi > bi => break,
+                            (None, _) => break,
+                            _ => {}
+                        }
                         m.advance(pos, ch);
-                        match m.accepts() {
-                            Some(true) => last_accepted_index = Some(pos + ch.len_utf8()),
-                            Some(false) => {}
-                            None => break,
+                        match (m.leftmost_accepting_split(), best_match) {
+                            (Some(ai), Some((bi, _))) if ai <= bi => {
+                                best_match = Some((ai, pos + ch.len_utf8()))
+                            }
+                            (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
+                            _ => {}
                         }
                     }
-                    match last_accepted_index {
-                        Some(i) => {
+
+                    match best_match {
+                        Some((i, j)) => {
                             handle.signal(1, 2); // match
                             handle.send().provide_string(remainder.substr(..i));
-                            remainder = remainder.substr(i..);
+                            handle.send().provide_string(remainder.substr(i..j));
+                            remainder = remainder.substr(j..);
                             break;
                         }
                         None => {
@@ -589,6 +601,32 @@ async fn string_reader(mut handle: Handle) {
                     }
                 }
                 3 => {
+                    // matchEnd
+                    let prefix = Pattern::readback(handle.receive()).await;
+                    let suffix = Pattern::readback(handle.receive()).await;
+                    let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                    for (pos, ch) in remainder.char_indices() {
+                        if m.accepts() == None {
+                            break;
+                        }
+                        m.advance(pos, ch);
+                    }
+
+                    match m.leftmost_accepting_split() {
+                        Some(i) => {
+                            handle.signal(1, 2); // match
+                            handle.send().provide_string(remainder.substr(..i));
+                            handle.send().provide_string(remainder.substr(i..));
+                            handle.break_();
+                            return;
+                        }
+                        None => {
+                            handle.signal(0, 2); // fail
+                        }
+                    }
+                }
+                4 => {
                     // remainder
                     handle.provide_string(remainder);
                     return;
@@ -693,6 +731,26 @@ impl Machine {
 
     fn advance(&mut self, pos: usize, ch: char) {
         self.inner.advance(&self.pattern, pos, ch);
+    }
+
+    fn leftmost_accepting_split(&self) -> Option<usize> {
+        let Pattern::Concat(_, p2) = self.pattern.as_ref() else {
+            return None;
+        };
+        let State::Concat(_, heap) = &self.inner.state else {
+            return None;
+        };
+        heap.iter()
+            .filter(|m2| m2.accepts(p2) == Some(true))
+            .map(|m2| m2.start)
+            .min()
+    }
+
+    fn leftmost_feasible_split(&self, pos: usize) -> Option<usize> {
+        let State::Concat(_, heap) = &self.inner.state else {
+            return None;
+        };
+        heap.iter().map(|m2| m2.start).min().or(Some(pos))
     }
 }
 
