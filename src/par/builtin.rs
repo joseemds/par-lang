@@ -602,6 +602,7 @@ async fn string_reader(mut handle: Handle) {
 #[derive(Debug, Clone)]
 enum Pattern {
     Empty,
+    Length(BigInt),
     Exact(Substr),
     Concat(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
@@ -611,54 +612,60 @@ enum Pattern {
 }
 
 impl Pattern {
-    async fn readback(mut handle: Handle) -> Self {
+    async fn readback(mut handle: Handle) -> Box<Self> {
         match handle.case(8).await {
             0 => {
-                // and
+                // .and(self, self) self
                 let left = Box::pin(Self::readback(handle.receive())).await;
-                let right = Box::pin(Self::readback(handle)).await;
-                Self::And(Box::new(left), Box::new(right))
+                let right = Box::pin(Self::readback(handle.receive())).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::And(left, right)), then))
             }
             1 => {
-                // concat
-                let left = Box::pin(Self::readback(handle.receive())).await;
-                let right = Box::pin(Self::readback(handle)).await;
-                Self::Concat(Box::new(left), Box::new(right))
+                // .e!
+                handle.continue_();
+                Box::new(Self::Empty)
             }
             2 => {
-                // empty
-                handle.continue_();
-                Self::Empty
+                // .length(Nat) self
+                let n = handle.receive().nat().await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Length(n)), then))
             }
             3 => {
-                // exact
-                let string = handle.string().await;
-                Self::Exact(string)
+                // .or(self, self) self
+                let left = Box::pin(Self::readback(handle.receive())).await;
+                let right = Box::pin(Self::readback(handle.receive())).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Or(left, right)), then))
             }
             4 => {
-                // or
-                let left = Box::pin(Self::readback(handle.receive())).await;
-                let right = Box::pin(Self::readback(handle)).await;
-                Self::Or(Box::new(left), Box::new(right))
+                // .repeat(self) self
+                let pat = Box::pin(Self::readback(handle.receive())).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Repeat(pat)), then))
             }
             5 => {
-                // repeat
-                let pat = Box::pin(Self::readback(handle)).await;
-                Self::Repeat(Box::new(pat))
+                // .repeat1(self) self
+                let pat = Box::pin(Self::readback(handle.receive())).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Repeat1(pat)), then))
             }
             6 => {
-                // repeat1
-                let pat = Box::pin(Self::readback(handle)).await;
-                Self::Repeat1(Box::new(pat))
+                // .s(String) self
+                let string = handle.receive().string().await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Exact(string)), then))
             }
             7 => {
-                // times
+                // .times(Nat.Nat, self) self
                 let number = handle.receive().nat().await;
-                let pat = Box::pin(Self::readback(handle)).await;
-                let mut repeated = Self::Empty;
+                let pat = Box::pin(Self::readback(handle.receive())).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                let mut repeated = then;
                 let mut remaining = number;
                 while remaining > BigInt::ZERO {
-                    repeated = Self::Concat(Box::new(pat.clone()), Box::new(repeated));
+                    repeated = Box::new(Self::Concat(pat.clone(), repeated));
                     remaining -= 1;
                 }
                 repeated
@@ -670,12 +677,12 @@ impl Pattern {
 
 #[derive(Debug)]
 struct Machine {
-    pattern: Pattern,
+    pattern: Box<Pattern>,
     inner: MachineInner,
 }
 
 impl Machine {
-    fn start(pattern: Pattern) -> Self {
+    fn start(pattern: Box<Pattern>) -> Self {
         let inner = MachineInner::start(&pattern, 0);
         Self { pattern, inner }
     }
@@ -699,6 +706,8 @@ impl MachineInner {
     fn start(pattern: &Pattern, start: usize) -> Self {
         let state = match pattern {
             Pattern::Empty => State::Init,
+
+            Pattern::Length(_) => State::Index(0),
 
             Pattern::Exact(_) => State::Index(0),
 
@@ -730,11 +739,15 @@ impl MachineInner {
 
             (Pattern::Empty, State::Init) => Some(true),
 
+            (Pattern::Length(n), State::Index(i)) => Some(n == &BigInt::from(*i)),
+
             (Pattern::Exact(s), State::Index(i)) => Some(s.len() == *i),
 
-            (Pattern::Concat(_, p2), State::Concat(_, heap)) => {
-                heap.iter().filter_map(|m2| m2.accepts(p2)).max()
-            }
+            (Pattern::Concat(p1, p2), State::Concat(m1, heap)) => heap
+                .iter()
+                .filter_map(|m2| m2.accepts(p2))
+                .max()
+                .or_else(|| m1.accepts(p1).map(|_| false)),
 
             (Pattern::And(p1, p2), State::Pair(m1, m2)) => match (m1.accepts(p1), m2.accepts(p2)) {
                 (Some(a1), Some(a2)) => Some(a1 && a2),
@@ -764,6 +777,14 @@ impl MachineInner {
             (_, State::Halt) => {}
 
             (Pattern::Empty, State::Init) => self.state = State::Halt,
+
+            (Pattern::Length(n), State::Index(i)) => {
+                if &BigInt::from(*i) < n {
+                    *i += 1;
+                } else {
+                    self.state = State::Halt;
+                }
+            }
 
             (Pattern::Exact(s), State::Index(i)) => {
                 if s.substr(*i..).chars().next() == Some(ch) {

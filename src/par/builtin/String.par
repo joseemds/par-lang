@@ -17,12 +17,12 @@ type Reader = recursive either {
 }
 
 type Pattern = recursive either {
-  .empty!,
-  .exact String,
-  .concat(self) self,
-  .and(self) self,
-  .or(self) self,
-  .repeat self,
-  .repeat1 self,
-  .times(Nat.Nat) self,
+  .e!,
+  .s(String) self,
+  .length(Nat.Nat) self,
+  .repeat(self) self,
+  .repeat1(self) self,
+  .times(Nat.Nat, self) self,
+  .and(self, self) self,
+  .or(self, self) self,
 }
