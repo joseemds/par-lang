@@ -15,7 +15,7 @@ type Reader = recursive either {
     },
     .matchEnd(Pattern, Pattern) => either {
       .fail self/attempt,
-      .match(Self, Self)!,
+      .match(String, String)!,
     }
   }
 }
