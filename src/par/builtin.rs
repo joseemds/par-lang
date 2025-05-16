@@ -25,6 +25,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module::parse_and_compile(include_str!("./builtin/Ordering.par")).unwrap(),
     );
     module.import(
+        "Char",
+        Module::parse_and_compile(include_str!("./builtin/Char.par")).unwrap(),
+    );
+    module.import(
         "String",
         Module::parse_and_compile(include_str!("./builtin/String.par")).unwrap(),
     );
@@ -223,11 +227,32 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
         Module {
             type_defs: vec![TypeDef::external("Char", &[], Type::char())],
             declarations: vec![],
-            definitions: vec![Definition::external(
-                "Code",
-                Type::function(Type::char(), Type::nat()),
-                |handle| Box::pin(char_code(handle)),
-            )],
+            definitions: vec![
+                Definition::external(
+                    "Equals",
+                    Type::function(
+                        Type::char(),
+                        Type::function(Type::char(), Type::name(Some("Bool"), "Bool", vec![])),
+                    ),
+                    |handle| Box::pin(char_equals(handle)),
+                ),
+                Definition::external(
+                    "Code",
+                    Type::function(Type::char(), Type::nat()),
+                    |handle| Box::pin(char_code(handle)),
+                ),
+                Definition::external(
+                    "Is",
+                    Type::function(
+                        Type::char(),
+                        Type::function(
+                            Type::name(None, "Class", vec![]),
+                            Type::name(Some("Bool"), "Bool", vec![]),
+                        ),
+                    ),
+                    |handle| Box::pin(char_is(handle)),
+                ),
+            ],
         },
     );
 
@@ -491,9 +516,96 @@ async fn int_to_string(mut handle: Handle) {
     handle.provide_string(Substr::from(x.to_str_radix(10)))
 }
 
+async fn char_equals(mut handle: Handle) {
+    let x = handle.receive().char().await;
+    let y = handle.receive().char().await;
+    if x == y {
+        handle.signal(1, 2); // true
+    } else {
+        handle.signal(0, 2); // false
+    }
+    handle.break_();
+}
+
 async fn char_code(mut handle: Handle) {
     let c = handle.receive().char().await;
     handle.provide_nat(BigInt::from(c as u32))
+}
+
+async fn char_is(mut handle: Handle) {
+    let ch = handle.receive().char().await;
+    let class = CharClass::readback(handle.receive()).await;
+    if class.contains(ch) {
+        handle.signal(1, 2); // true
+    } else {
+        handle.signal(0, 2); // false
+    }
+    handle.break_();
+}
+
+#[derive(Debug, Clone)]
+enum CharClass {
+    Any,
+    Char(char),
+    Whitespace,
+    AsciiAny,
+    AsciiAlpha,
+    AsciiAlphanum,
+    AsciiDigit,
+}
+
+impl CharClass {
+    async fn readback(mut handle: Handle) -> Self {
+        match handle.case(4).await {
+            0 => {
+                // any
+                Self::Any
+            }
+            1 => {
+                // ascii
+                match handle.case(4).await {
+                    0 => {
+                        // alpha
+                        Self::AsciiAlpha
+                    }
+                    1 => {
+                        // alphanum
+                        Self::AsciiAlphanum
+                    }
+                    2 => {
+                        // any
+                        Self::AsciiAny
+                    }
+                    3 => {
+                        // digit
+                        Self::AsciiDigit
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            2 => {
+                // char
+                Self::Char(handle.char().await)
+            }
+            3 => {
+                // whitespace
+                Self::Whitespace
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn contains(&self, ch: char) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Char(ch1) => ch == *ch1,
+            Self::Whitespace => ch.is_whitespace(),
+            Self::AsciiAny => ch.is_ascii(),
+            Self::AsciiAlpha => ch.is_ascii_alphabetic(),
+            Self::AsciiAlphanum => ch.is_ascii_alphanumeric(),
+            Self::AsciiDigit => ch.is_ascii_digit(),
+        }
+    }
 }
 
 async fn string_builder(mut handle: Handle) {
@@ -642,6 +754,8 @@ enum Pattern {
     Empty,
     Length(BigInt),
     Exact(Substr),
+    One(CharClass),
+    Non(CharClass),
     Concat(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
     Or(Box<Self>, Box<Self>),
@@ -651,7 +765,7 @@ enum Pattern {
 
 impl Pattern {
     async fn readback(mut handle: Handle) -> Box<Self> {
-        match handle.case(8).await {
+        match handle.case(10).await {
             0 => {
                 // .and(self, self) self
                 let left = Box::pin(Self::readback(handle.receive())).await;
@@ -671,31 +785,43 @@ impl Pattern {
                 Box::new(Self::Concat(Box::new(Self::Length(n)), then))
             }
             3 => {
+                // .non(Char.Class) self
+                let class = CharClass::readback(handle.receive()).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::Non(class)), then))
+            }
+            4 => {
+                // .one(Char.Class) self
+                let class = CharClass::readback(handle.receive()).await;
+                let then = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Concat(Box::new(Self::One(class)), then))
+            }
+            5 => {
                 // .or(self, self) self
                 let left = Box::pin(Self::readback(handle.receive())).await;
                 let right = Box::pin(Self::readback(handle.receive())).await;
                 let then = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Concat(Box::new(Self::Or(left, right)), then))
             }
-            4 => {
+            6 => {
                 // .repeat(self) self
                 let pat = Box::pin(Self::readback(handle.receive())).await;
                 let then = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Concat(Box::new(Self::Repeat(pat)), then))
             }
-            5 => {
+            7 => {
                 // .repeat1(self) self
                 let pat = Box::pin(Self::readback(handle.receive())).await;
                 let then = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Concat(Box::new(Self::Repeat1(pat)), then))
             }
-            6 => {
+            8 => {
                 // .s(String) self
                 let string = handle.receive().string().await;
                 let then = Box::pin(Self::readback(handle)).await;
                 Box::new(Self::Concat(Box::new(Self::Exact(string)), then))
             }
-            7 => {
+            9 => {
                 // .times(Nat.Nat, self) self
                 let number = handle.receive().nat().await;
                 let pat = Box::pin(Self::readback(handle.receive())).await;
@@ -769,6 +895,9 @@ impl MachineInner {
 
             Pattern::Exact(_) => State::Index(0),
 
+            Pattern::One(_) => State::Index(0),
+            Pattern::Non(_) => State::Index(0),
+
             Pattern::Concat(p1, p2) => {
                 let prefix = Self::start(p1, start);
                 let suffixes = if prefix.accepts(p1) == Some(true) {
@@ -800,6 +929,9 @@ impl MachineInner {
             (Pattern::Length(n), State::Index(i)) => Some(n == &BigInt::from(*i)),
 
             (Pattern::Exact(s), State::Index(i)) => Some(s.len() == *i),
+
+            (Pattern::One(_), State::Index(i)) => Some(*i == 1),
+            (Pattern::Non(_), State::Index(i)) => Some(*i == 1),
 
             (Pattern::Concat(p1, p2), State::Concat(m1, heap)) => heap
                 .iter()
@@ -847,6 +979,21 @@ impl MachineInner {
             (Pattern::Exact(s), State::Index(i)) => {
                 if s.substr(*i..).chars().next() == Some(ch) {
                     *i += ch.len_utf8();
+                } else {
+                    self.state = State::Halt;
+                }
+            }
+
+            (Pattern::One(class), State::Index(i)) => {
+                if *i == 0 && class.contains(ch) {
+                    *i = 1;
+                } else {
+                    self.state = State::Halt;
+                }
+            }
+            (Pattern::Non(class), State::Index(i)) => {
+                if *i == 0 && !class.contains(ch) {
+                    *i = 1;
                 } else {
                     self.state = State::Halt;
                 }

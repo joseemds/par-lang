@@ -23,6 +23,8 @@ type Reader = recursive either {
 type Pattern = recursive either {
   .e!,
   .s(String) self,
+  .one(Char.Class) self,
+  .non(Char.Class) self,
   .length(Nat.Nat) self,
   .repeat(self) self,
   .repeat1(self) self,

@@ -1,10 +1,11 @@
 type Class = either {
   .any!,
+  .char Char,
+  .whitespace!,
   .ascii either {
     .any!,
-    .alphabetic!,
-    .alphanumeric!,
+    .alpha!,
+    .alphanum!,
     .digit!,
   },
-  .whitespace!,
 }

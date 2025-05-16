@@ -188,7 +188,7 @@ impl Element {
                                 let entered = ui
                                     .horizontal(|ui| {
                                         ui.add(
-                                            egui::TextEdit::singleline(&mut input)
+                                            egui::TextEdit::multiline(&mut input)
                                                 .hint_text("Type a string..."),
                                         );
                                         ui.add(egui::Button::small(egui::Button::new("OK")))
