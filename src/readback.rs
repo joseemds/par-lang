@@ -189,6 +189,7 @@ impl Element {
                                     .horizontal(|ui| {
                                         ui.add(
                                             egui::TextEdit::multiline(&mut input)
+                                                .desired_rows(1)
                                                 .hint_text("Type a string..."),
                                         );
                                         ui.add(egui::Button::small(egui::Button::new("OK")))

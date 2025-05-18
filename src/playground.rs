@@ -215,12 +215,7 @@ impl eframe::App for Playground {
         } else {
             egui::Visuals::light()
         };
-
-        visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-        visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
         visuals.code_bg_color = egui::Color32::TRANSPARENT;
-
         ctx.set_visuals(visuals);
 
         egui::CentralPanel::default().show(ctx, |ui| {
