@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    future::Future,
+    sync::{Arc, Mutex},
+};
 
 use arcstr::Substr;
 use futures::channel::oneshot;
@@ -48,6 +51,17 @@ impl Handle {
             net,
             tree: Some(tree),
         }
+    }
+
+    pub fn concurrently<F>(self, f: impl FnOnce(Self) -> F)
+    where
+        F: 'static + Send + Future<Output = ()>,
+    {
+        self.net
+            .clone()
+            .lock()
+            .expect("lock failed")
+            .spawn(Box::pin(f(self)));
     }
 
     pub async fn nat(self) -> BigInt {

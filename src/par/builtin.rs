@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, fs::Metadata, future::Future, path::PathBuf, sync::Arc};
 
 use arcstr::Substr;
 use num_bigint::BigInt;
+use tokio::fs::{self, File, ReadDir};
 
 use crate::icombs::readback::Handle;
 
@@ -35,6 +36,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
     module.import(
         "Console",
         Module::parse_and_compile(include_str!("./builtin/Console.par")).unwrap(),
+    );
+    module.import(
+        "Storage",
+        Module::parse_and_compile(include_str!("./builtin/Storage.par")).unwrap(),
     );
 
     module.import(
@@ -306,7 +311,23 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 |handle| Box::pin(console_open(handle)),
             )],
         },
-    )
+    );
+
+    module.import(
+        "Storage",
+        Module {
+            type_defs: vec![],
+            declarations: vec![],
+            definitions: vec![Definition::external(
+                "Open",
+                Type::function(
+                    Type::name(None, "Path", vec![]),
+                    Type::name(None, "OpenResult", vec![]),
+                ),
+                |handle| Box::pin(storage_open(handle)),
+            )],
+        },
+    );
 }
 
 async fn nat_add(mut handle: Handle) {
@@ -655,96 +676,91 @@ async fn string_reader(mut handle: Handle) {
     let mut remainder = handle.receive().string().await;
 
     loop {
-        if remainder.is_empty() {
-            handle.signal(0, 2); // empty
-            handle.break_();
-            return;
-        }
-
-        handle.signal(1, 2); // some
-        loop {
-            match handle.case(5).await {
-                0 => {
-                    // char
-                    let c = remainder.chars().next().unwrap();
-                    handle.send().provide_char(c);
-                    remainder = remainder.substr(c.len_utf8()..);
-                    break;
-                }
-                1 => {
-                    // close
+        match handle.case(4).await {
+            0 => {
+                // close
+                handle.break_();
+                return;
+            }
+            1 => {
+                // match
+                let prefix = Pattern::readback(handle.receive()).await;
+                let suffix = Pattern::readback(handle.receive()).await;
+                if remainder.is_empty() {
+                    handle.signal(0, 3); // empty
                     handle.break_();
                     return;
                 }
-                2 => {
-                    // match
-                    let prefix = Pattern::readback(handle.receive()).await;
-                    let suffix = Pattern::readback(handle.receive()).await;
-                    let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
 
-                    let mut best_match = None;
-                    for (pos, ch) in remainder.char_indices() {
-                        match (m.leftmost_feasible_split(pos), best_match) {
-                            (Some(fi), Some((bi, _))) if fi > bi => break,
-                            (None, _) => break,
-                            _ => {}
-                        }
-                        m.advance(pos, ch);
-                        match (m.leftmost_accepting_split(), best_match) {
-                            (Some(ai), Some((bi, _))) if ai <= bi => {
-                                best_match = Some((ai, pos + ch.len_utf8()))
-                            }
-                            (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
-                            _ => {}
-                        }
+                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                let mut best_match = None;
+                for (pos, ch) in remainder.char_indices() {
+                    match (m.leftmost_feasible_split(pos), best_match) {
+                        (Some(fi), Some((bi, _))) if fi > bi => break,
+                        (None, _) => break,
+                        _ => {}
                     }
-
-                    match best_match {
-                        Some((i, j)) => {
-                            handle.signal(1, 2); // match
-                            handle.send().provide_string(remainder.substr(..i));
-                            handle.send().provide_string(remainder.substr(i..j));
-                            remainder = remainder.substr(j..);
-                            break;
+                    m.advance(pos, ch);
+                    match (m.leftmost_accepting_split(), best_match) {
+                        (Some(ai), Some((bi, _))) if ai <= bi => {
+                            best_match = Some((ai, pos + ch.len_utf8()))
                         }
-                        None => {
-                            handle.signal(0, 2); // fail
-                        }
+                        (Some(ai), None) => best_match = Some((ai, pos + ch.len_utf8())),
+                        _ => {}
                     }
                 }
-                3 => {
-                    // matchEnd
-                    let prefix = Pattern::readback(handle.receive()).await;
-                    let suffix = Pattern::readback(handle.receive()).await;
-                    let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
 
-                    for (pos, ch) in remainder.char_indices() {
-                        if m.accepts() == None {
-                            break;
-                        }
-                        m.advance(pos, ch);
+                match best_match {
+                    Some((i, j)) => {
+                        handle.signal(1, 3); // match
+                        handle.send().provide_string(remainder.substr(..i));
+                        handle.send().provide_string(remainder.substr(i..j));
+                        remainder = remainder.substr(j..);
                     }
-
-                    match m.leftmost_accepting_split() {
-                        Some(i) => {
-                            handle.signal(1, 2); // match
-                            handle.send().provide_string(remainder.substr(..i));
-                            handle.send().provide_string(remainder.substr(i..));
-                            handle.break_();
-                            return;
-                        }
-                        None => {
-                            handle.signal(0, 2); // fail
-                        }
+                    None => {
+                        handle.signal(0, 3); // fail
                     }
                 }
-                4 => {
-                    // remainder
-                    handle.provide_string(remainder);
+            }
+            2 => {
+                // matchEnd
+                let prefix = Pattern::readback(handle.receive()).await;
+                let suffix = Pattern::readback(handle.receive()).await;
+                if remainder.is_empty() {
+                    handle.signal(0, 3); // empty
+                    handle.break_();
                     return;
                 }
-                _ => unreachable!(),
+
+                let mut m = Machine::start(Box::new(Pattern::Concat(prefix, suffix)));
+
+                for (pos, ch) in remainder.char_indices() {
+                    if m.accepts() == None {
+                        break;
+                    }
+                    m.advance(pos, ch);
+                }
+
+                match m.leftmost_accepting_split() {
+                    Some(i) => {
+                        handle.signal(1, 3); // match
+                        handle.send().provide_string(remainder.substr(..i));
+                        handle.send().provide_string(remainder.substr(i..));
+                        handle.break_();
+                        return;
+                    }
+                    None => {
+                        handle.signal(0, 3); // fail
+                    }
+                }
             }
+            3 => {
+                // remainder
+                handle.provide_string(remainder);
+                return;
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -1099,6 +1115,131 @@ async fn console_open(mut handle: Handle) {
             1 => {
                 // print
                 println!("{}", handle.receive().string().await);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+async fn storage_open(mut handle: Handle) {
+    let path = PathBuf::from(handle.receive().string().await.as_str());
+    let meta = match fs::metadata(&path).await {
+        Ok(meta) => meta,
+        Err(error) => {
+            handle.signal(1, 3); // err
+            return handle.provide_string(Substr::from(error.to_string()));
+        }
+    };
+    handle_open_result(path, meta, handle).await
+}
+
+fn handle_open_result(
+    path: PathBuf,
+    meta: Metadata,
+    mut handle: Handle,
+) -> impl Send + Future<Output = ()> {
+    async move {
+        let path = fs::canonicalize(&path).await.unwrap_or(path);
+
+        if meta.is_file() {
+            let file = match File::open(&path).await {
+                Ok(file) => file,
+                Err(error) => {
+                    handle.signal(1, 3); // err
+                    return handle.provide_string(Substr::from(error.to_string()));
+                }
+            };
+            handle.signal(2, 3); // file
+            return handle_file_info(
+                Substr::from(path.to_string_lossy()),
+                BigInt::from(meta.len()),
+                file,
+                handle,
+            )
+            .await;
+        }
+
+        if meta.is_dir() {
+            let dir = match fs::read_dir(&path).await {
+                Ok(dir) => dir,
+                Err(error) => {
+                    handle.signal(1, 3); // err
+                    return handle.provide_string(Substr::from(error.to_string()));
+                }
+            };
+            handle.signal(0, 3); // directory
+            return handle_directory_info(Substr::from(path.to_string_lossy()), dir, handle).await;
+        }
+
+        handle.signal(1, 3); // err
+        handle.provide_string(Substr::from("unsupported storage item type"));
+    }
+}
+
+async fn handle_file_info(path: Substr, size: BigInt, _file: File, mut handle: Handle) {
+    loop {
+        match handle.case(4).await {
+            0 => {
+                // close
+                return;
+            }
+            1 => {
+                // getPath
+                handle.send().provide_string(path.clone());
+            }
+            2 => {
+                // getSize
+                handle.send().provide_nat(size.clone());
+            }
+            3 => {
+                // readUTF8
+                todo!("implement")
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handle) {
+    loop {
+        match handle.case(3).await {
+            0 => {
+                // close
+                handle.break_();
+                return;
+            }
+            1 => {
+                // getPath
+                handle.send().provide_string(path.clone());
+            }
+            2 => {
+                // list
+                while let Ok(Some(entry)) = dir.next_entry().await {
+                    let Ok(meta) = entry.metadata().await else {
+                        continue;
+                    };
+
+                    handle.signal(1, 2); // item
+                    handle.send().concurrently(|mut handle| async move {
+                        let path = Substr::from(entry.path().to_string_lossy());
+                        handle.send().provide_string(path);
+                        match handle.case(2).await {
+                            0 => {
+                                // open
+                                handle_open_result(entry.path(), meta, handle).await
+                            }
+                            1 => {
+                                // skip
+                                handle.break_();
+                                return;
+                            }
+                            _ => unreachable!(),
+                        }
+                    });
+                }
+                handle.signal(0, 2); // empty
+                handle.break_();
+                return;
             }
             _ => unreachable!(),
         }

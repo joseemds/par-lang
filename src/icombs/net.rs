@@ -285,6 +285,13 @@ impl Net {
         net
     }
 
+    pub fn spawn(&self, fut: Pin<Box<dyn Send + Future<Output = ()>>>) {
+        let Some(reducer) = &self.reducer else {
+            panic!("reducer not started");
+        };
+        reducer.spawner.spawn(fut).expect("spawn failed");
+    }
+
     pub fn notify_reducer(&self) {
         let Some(reducer) = &self.reducer else {
             panic!("reducer not started");
