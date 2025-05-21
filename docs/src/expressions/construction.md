@@ -59,35 +59,41 @@ Having multiple expressions between `(` and `)` is just syntax sugar:
 (a) (b) c
 ```
 
-If `a` is of type `A` and `b` is of type `B`, the pair expression `(a) b` is of the [pair type](../types.md#pair-types) `(A) B`.
+
+(Since generic are lowercases, I changed the name of variables, what would be other alternatives?)
+
+If `x` is of type `a` and `y` is of type `b`, the pair expression `(x) y` is of the [pair type](../types.md#pair-types) `(a) b`.
 
 ```par
-let bool_pair: (Bool, Bool)! = (.true!, .false!)!
+Def Bool_pair: (Bool, Bool)! = (.true!, .false!)!
 ```
 
-The difference between representing a pair of `A` and `B` as `(A, B)!` or `(A) B` is:
-- `(A1, ..., An)!`. is the default for regular tuples.
+The difference between representing a pair of `a` and `b` as `(a, b)!` or `(a) b` is:
+- `(a1, ..., an)!`. is the default for regular tuples.
   ```par
-  let zero_to_two: (Nat, Nat, Nat)! = (
+  def Zero_to_two: (Nat, Nat, Nat)! = (
     .zero!,
     .succ.zero!,
     .succ.succ.zero!,
   )!
   ```
 
-- `(A1, ..., An) B` more specifically means "send `A1`, ..., and `An`, then continue as `B`". It's used when all but the last member of a tuple should be received separately and the receiver should continue as the last one. For example:
-  ```par
-  def length: [List] (Nat) List = [l] l begin {
+- `(a1, ..., an) b` more specifically means "send `A1`, ..., and `An`, then continue as `B`". It's used when all but the last member of a tuple should be received separately and the receiver should continue as the last one. For example:
+
+Does not compile
+
+```par
+  def Length: [List] (Nat) List = [l] l.begin.case {
     .empty! => (.zero!) .empty!,
     .item(head) tail => do {
       // tail loop is of type (Nat) List
-      tail loop
+      tail.loop
       // receive len_pred 
       tail[len_pred]
       // tail is now as before
     } in (.succ len_pred) .item(head) tail
   }
-  ```
+```
 
 Pair expressions can be linked via:
 ```par
@@ -121,7 +127,7 @@ If `p` is an [irrefutable](patterns.md#irrefutable-note) pattern for type `A` an
 
 We've already seen a lot of functions, so here's a simple one:
 ```par
-def add2: [Nat] Nat = [n] .succ.succ n
+def Add2: [Nat] Nat = [n] .succ.succ n
 ```
 
 Note that function expressions are the primary way of defining functions in par. Defining a function looks the same as defining any other value.
@@ -166,7 +172,7 @@ type Nat = recursive either {
 
 // construct a value of the recursive
 // Nat type like any other either type
-def two = .succ.succ.zero!
+def Two = .succ.succ.zero!
 ```
 
 Either selections can be linked via:
@@ -203,12 +209,12 @@ Some patterns can be used on the left side:
 
 Choice constructions look very similar to [match expressions](application.md#match-expressions) (intentionally!).
 ```par
-type BoolChoice = {
+type BoolChoice = choice {
   .true => Bool,
   .false => Bool,
 }
 
-def negate: BoolChoice = {
+def negate: BoolChoice = case {
   .true => .false!,
   .false => .true!,
 }
@@ -282,25 +288,25 @@ dual <> a // with loop in a replaced by begin a
 
 Having multiple types between `(` and `)` is just syntax sugar:
 ```par
-(type A, B) c
+(type a, b) c
 // is equivalent to
-(type A) (type B) c
+(type a) (type b) c
 ```
 
 If `a` is of type `A`, the existential construction `(type T) a` is of the [existential type](../types.md#existential-types) `(type T) A`.
 
 ```par
-type Any = (type T) T
+type Any = (type t) t
 
-let any_bool: Any = (type Bool) .true!
-let any_unit: Any = (type !) !
+def Any_bool: Any = (type Bool) .true!
+def Any_unit: Any = (type !) !
 ```
 
 Existential constructions can be linked via:
 ```par
-dual <> (type T) a
+dual <> (type t) a
 // is equivalent to
-dual(type T)
+dual(type t)
 dual <> a
 ```
 
@@ -318,16 +324,16 @@ dual <> a
 
 Having multiple names between `[` and `]` is just syntax sugar:
 ```par
-[type T, U] x
+[type t, u] x
 // is equivalent to
-[type T] [type U] x
+[type t] [type u] x
 ```
 
 If `a` is of type `A`, the universal construction `[type T] a` (where `a` can use the type `T`) is of the [universal type](../types.md#universal-types) `[type T] A`.
 
 Universal constructions are moslty used to define "generic functions":
 ```par
-def empty_list : [type T] List<T> = [type T] .empty!
+def Empty_list : [type t] List<t> = [type t] .empty!
 
 // called via
 let bools: List<Bool> = empty_list(type Bool)
@@ -335,9 +341,9 @@ let bools: List<Bool> = empty_list(type Bool)
 
 Universal constructions can be linked via:
 ```par
-dual <> [type T] a
+dual <> [type t] a
 // is equivalent to
-dual[type T]
+dual[type t]
 dual <> a
 ```
 

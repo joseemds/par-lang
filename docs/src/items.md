@@ -21,20 +21,20 @@ Items are the primary building block of Par programs.
 It can be used as many times as one desires, instantiating itself every time it's used.
 ```par
 // define a static value
-dec unit : !
-def unit = !
+dec Unit : !
+def Unit = !
 // or all-in-one
-def unit: ! = !
+def Unit: ! = !
 
 // define a function
-def negate: [Bool] Bool = [b] b {
+def Negate: [Bool] Bool = [b] b.case {
   .true! => .false!
   .false! => .true!
 }
 
 // define a function receiving types
-dec pop : [type T] [List<T>] (Option<T>) List<T>
-def pop = [type T] [list] list {
+dec Pop : [type t] [List<t>] (Option<t>) List<t>
+def Pop = [type t] [list] list.case {
   .empty! => (.none!) .empty!
   .item(head) tail => (.some head) tail
 }
@@ -64,9 +64,9 @@ type Bool = either {
 }
 
 // parameterized type alias
-type Option<T> = either {
+type Option<t> = either {
   .none!
-  .some T
+  .some t
 }
 ```
 

@@ -43,9 +43,9 @@ At the heart of Par lies its type system, representing linear logic.
 Defined via [type aliases](items.md#type-definitions), named types can always be replaced with their definition without changing meaning.
 
 ```par
-let x: Option<T> = .none!
+let x: Option<t> = .none!
 // is equivalent to
-let x: either { .none!, .some T } = .none!
+let x: either { .none!, .some t } = .none!
 ```
 
 ## The Unit Type
@@ -63,28 +63,28 @@ let x: either { .none!, .some T } = .none!
 
 Unit is a type providing no information. In C(++) it's called `void`, in Rust it's `()` (and it can be thought of as an empty tuple in Par as well). There is exactly one value of type `!`, and it's also `!`.
 ```par
-let unit: ! = !
+def Unit: ! = !
 ```
 Every value of a type `A` corresponds to a function `[!] A`:
 ```par
-def select: [type T] [T] [!] T = [type T] [x] [!] x
+def Select: [type t] [t] [!] t = [type t] [x] [!] x
 // uncurrying makes this clear
-// [T] [!] T = [T, !] T ≅ [(T) !] T ≅ [T] T
+// [t] [!] t = [t, !] t ≅ [(t) !] t ≅ [t] t
 
-def extract: [type T] [[!] T] T = [type T] [f] f(!)
+def Extract: [type t] [[!] t] t = [type t] [f] f(!)
 ```
 
 For some types there is a function `[A] !`. 
 Those can be destroyed without any transformation.
 ```par
 // Types constructed only from ! are droppable
-def drop_bool: [Bool] ! = [b] b {
+def Drop_bool: [Bool] ! = [b] b.case {
   .true! => !
   .false! => !
 }
 
 // Functions are not droppable in general
-def drop_impossible: [[Bool] Bool] ! = todo
+def Drop_impossible: [[Bool] Bool] ! = todo
 ```
 <!--// Replicables are droppable
 def drop_repl: [type T] [&T] ! = !-->
@@ -112,28 +112,31 @@ type T = (A) (B) R
 ```
 
 While `(A, B)!` and `(A) B` are both valid ways to define a pair of `A` and `B`, depending on the context, one might be more convenient than the other:
+
+// Naming conflicts
+
 ```par
 // convert (A, B)! into (A) B
-def i : [(A, B)!] (A) B = [x]
+def i : [(a, b!] (A) B = [x]
   let (a, b)! = x in (a) b
 // and back
 def j : [(A) B] (A, B)! = [x]
   let (a) b = x in (a, b)!
 
 // a good use case of (A) B
-type List<T> = recursive either {
+type List<t> = recursive either {
   .empty!
-  .item(T) self
+  .item(t) self
 }
 // can now be created like this:
-let bool_list: List<Bool> =
+let Bool_list: List<Bool> =
   .item(.true!).item(.false!).empty!
 
 // in most cases, (A, B)! is the safer bet
 // as it uses more friendly syntax
-type Pair<T, T> = (T, T)!
+type Pair<t, t> = (t, t)!
 
-let bool_pair: Pair<Bool> =
+def Bool_pair: Pair<Bool> =
   (.true!, .false!)!
 ```
 
@@ -186,12 +189,12 @@ type T = [A] [B] R
 
 Values are created using [function expressions](./expressions/construction.md#function-expressions):
 ```par
-let add1: [Nat] Nat = [n] .succ n
+def Add1: [Nat] Nat = [n] .succ n
 ```
 and destructed by [calling](./expressions/application.md#function-calls) the function:
 ```par
-let one: Nat = .succ.zero!
-let two = add1(one)
+def One: Nat = .succ.zero!
+def Two = add1(one)
 ```
 
 Mathematically, `[A] B` is a [linear](./linearity.md) function \\(A \multimap B\\). For session types, it means "receive `A` and continue as `B`".
@@ -219,18 +222,18 @@ type Bool = either {
 }
 
 // a slightly more complex example
-type TwoOrNone<T> = either {
+type TwoOrNone<t> = either {
   .none!      // variant "none" with "no" payload (using !)
-  .two(T, T)! // variant "some" with "two" payloads
+  .two(t, t)! // variant "some" with "two" payloads
 }
 ```
 
 Values are created by attaching a label to its required payload.
 Note that the corresponding either type must always be known when labeling an expression. A [type annotation]() can be used for that.
 ```par
-let no_bool: TwoOrNone<Bool> = .none!
+def No_bool: TwoOrNone<Bool> = .none!
 
-let both_bools: TwoOrNone<Bool> = .two(.true!, .false!)!
+def Both_bools: TwoOrNone<Bool> = .two(.true!, .false!)!
 ```
 
 Mathematically, `either { .a A, .b B }` is \\(A \oplus B\\). For session types, it means "select from `A` or `B`".
@@ -238,7 +241,7 @@ An empty either type `either {}` is therefore \\(\mathbf{0}\\), the empty type.
 In Haskell, it's called `void` and in Rust it's `!` (not to be confused with the `!` in Par). 
 There is a function from it to every type:
 ```par
-def absurd: [type T] [either {}] T = [type T] [x] x {}
+def Absurd: [type T] [either {}] T = [type T] [x] x {}
 ```
 This function can never be called though.
 
@@ -267,28 +270,28 @@ It consists of several labels that can be used as signals to destruct the receiv
 
 ```par
 // choice of two
-type BoolChoice<A, B> = {
-  .true => A
-  .false => B
+type BoolChoice<a, b> = {
+  .true => a
+  .false => b
 }
 
 // destruct a Bool
-def negate(b: Bool): Bool = b {
+def Negate(b: Bool): Bool = b.case {
   .true! => .false!
   .false! => .true!
 }
 
 // construct a choice
-def negate_choice: BoolChoice<Bool, Bool> = {
+def NegateChoice: BoolChoice<Bool, Bool> = case {
   .true => .false!
   .false => .true!
 }
 
 // define negate using the choice
 // featuring selecting from the choice type value
-def also_negate: [Bool] Bool = [b] b {
-  .true! => negate_choice.true
-  .false! => negate_choice.false
+def Also_negate: [Bool] Bool = [b] b.case {
+  .true! => Negate_choice.true
+  .false! => Negate_choice.false
 }
 ```
 `.cons => [A] B` can also be written as `.cons(A) => B`
@@ -296,25 +299,27 @@ def also_negate: [Bool] Bool = [b] b {
 A choice type represents an interface for interacting with data. While an either type describes its underlying data, a choice type describes what can be done with it.
 ```par
 // creating an interface
-type Stack<T, Unwrap> = iterative {
-  .push(T) => self
-  .pop => (Option<T>) self
-  .unwrap => Unwrap
+type Option<t> = either {.none!, .some t}
+
+type Stack<t, unwrap> = iterative choice {
+  .push(t) => self
+  .pop => (Option<t>) self
+  .unwrap => unwrap
 }
 
 // implementing it
-dec list_stack : [type T] [List<T>] Stack<T, List<T>>
-def list_stack = [type T] [list] begin {
-  .push(x) => let list: List<T> = .item(x) list in loop
-  .pop => list {
-    .empty! => (.none!) let list: List<T> = .empty! in loop,
+dec List_stack : [type t] [List<t>] Stack<t, List<t>>
+def List_stack = [type t] [list] begin case {
+  .push(x) => let list: List<t> = .item(x) list in loop
+  .pop => list.case {
+    .empty! => (.none!) let list: List<t> = .empty! in loop,
     .item(head) tail => (.some head) let list = tail in loop
   }
   .unwrap => list
 }
 
-def main = do {
-  let stack = list_stack(type Bool)(.empty!)
+def Main = do {
+  let stack = List_stack(type Bool)(.empty!)
   stack.push(.true!)
   stack.push(.false!)
 } in stack
@@ -324,7 +329,7 @@ For an explanation of `iterative`-`self` and `begin`-`loop`, see [iterative type
 Mathematically, `{ .a => A, .b => B }` is \\(A \mathbin{\\&} B\\). For session types, it means "offer a choice of `A` or `B`".
 An empty choice `{}` is therefore \\(\top\\) and has exactly one value, `{}`. There is a function to it from every type:
 ```par
-def immortalize: [type T] [T] {} = [type T] [x] {}
+def Immortalize: [type t] [t] {} = [type t] [x] {}
 ```
 The result of this function can never be used though.
 
@@ -347,9 +352,9 @@ If no loop label is present, `self` corresponds to the innermost `recursive`/`it
 
 Recursive types are mostly used in conjunction with either types:
 ```par
-type List<T> = recursive either {
+type List<t> = recursive either {
   .empty!
-  .item(T) self
+  .item(t) self
 }
 ```
 <!--// another way of defining a recursive type is the following:
@@ -367,7 +372,7 @@ type Rec = recursive Node<self>
 Values of recursive types always terminate. They have to be constructed finitely.
 ```par
 // a simple List
-let l: List<Bool> = .item(.true!).item(.false!).empty!
+def L: List<Bool> = .item(.true!).item(.false!).empty!
 ```
 Mathematically, a recursive either type represents an inductive type.
 Constructors without `self` are the base cases while those with `self` represent
@@ -382,14 +387,14 @@ type Nat = recursive either {
   .succ self
 }
 
-dec is_even : [Nat] Bool
+dec Is_even : [Nat] Bool
 // induction over n (marked by applying begin-loop)
-def is_even = [n] n begin {
+def Is_even = [n] n.begin.case {
   // base case(s)
   .zero! => .true!
   // inductive step(s)
   // pred loop is analogous to an inductive hypothesis
-  .succ pred => not(pred loop)
+  .succ pred => not(pred.loop)
 }
 ```
 
@@ -417,9 +422,9 @@ type Repl<T> = iterative {
 }
 ```-->
 ```par
-type Stream<T> = iterative {
+type Stream<t> = iterative choice {
   .close => !
-  .next => (T) self
+  .next => (t) self
 }
 ```
 
@@ -460,9 +465,9 @@ def repl_bool = [b] begin {
 
 Values of iterative types may be infinite. In contrast to recursive types, such values can only be _destructed_ in finitely many steps.
 ```par
-type Inf<T> = iterative (T) self
+type Inf<t> = iterative (t) self
 
-def infinite_bools: Inf<Bool> = begin (.true!) loop
+def Infinite_bools: Inf<Bool> = begin (.true!) loop
 ```
 This infinite value can be constructed but there is no way of fully destructing (so: using) it.
 
@@ -508,39 +513,7 @@ def repl_bool = [b] begin {
 }
 ```-->
 ```par
-?type Nat = recursive either { .zero!, .succ self }
-?
-// construct a stream of all natural numbers
-// in form of the iterative Stream<Nat>
-def nat_stream: Stream<Nat> = 
-  let n: Nat = .zero! in 
-  // coinduction (independent begin-loop)
-  begin {
-    // break, return !
-    .close => drop(n),
-
-    .next => do {
-      let (next, n)! = copy(n)
-      let n: Nat = .succ n
-    } in
-      // yield the next number 
-      (n1)
-      // continue (coinductive step)
-      loop 
-  }
-
-// helpers
-
-def drop: [Nat] ! = [n] n begin {
-  .zero! => !
-  .succ pred => pred loop
-}
-
-def copy: [Nat] (Nat, Nat)! = [n] n begin {
-  .zero! => (.zero!, .zero!)!
-  .succ pred => let (p1, p2)! = pred loop
-    in (.succ p1, .succ p2)!
-}
+TODO: // List example
 ```
 <!--```par
 // fibonacci sequence
@@ -698,20 +671,20 @@ Mathematically, `?` is \\(\bot\\), the unit for \\(⅋\\). So \\(\bot \mathbin{�
 
 `chan A` represents a channel accepting an `A`:
 ```par
-def just_true: Bool = chan yield {
-  let c: chan Bool = yield
+def JustTrue: Bool = chan yield {
+  let c: dual Bool = yield
   c.true!
 }
 ```
-`chan` is merely a type transformer, turning a type into its dual.
-For example, `chan chan T` is _equal_ to `T` (not just isomorphic).
+`dual` is merely a type transformer, turning a type into its dual.
+For example, `dual dual T` is _equal_ to `T` (not just isomorphic).
 
 A more elaborate example can be seen [here](https://github.com/faiface/par-lang/blob/main/examples/flatten.par)
 
-A `chan A` can be linked with an `A` (using `<>`), annihilating both and ending the process.
+A `dual A` can be linked with an `A` (using `<>`), annihilating both and ending the process.
 ```par
-def just_true: Bool = chan yield {
-  let c: chan Bool = yield
+def JustTrue: Bool = chan yield {
+  let c: dual Bool = yield
   let b: Bool = .true!
   c <> b
 }
