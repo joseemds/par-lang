@@ -868,6 +868,7 @@ fn construction(input: &mut Input) -> Result<Construct> {
 fn cons_then(input: &mut Input) -> Result<Construct> {
     alt((
         expr_literal,
+        expr_list,
         expr_fork,
         expr_let,
         expr_do,
