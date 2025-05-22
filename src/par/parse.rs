@@ -156,16 +156,15 @@ fn local_name(input: &mut Input) -> Result<LocalName> {
 
 fn global_name(input: &mut Input) -> Result<GlobalName> {
     (
-        opt((uppercase_identifier, t(TokenKind::Dot))),
         uppercase_identifier,
+        opt((t(TokenKind::Dot), uppercase_identifier)),
     )
-        .map(|(opt_module, (mut span, primary))| {
-            let module = match opt_module {
-                Some(((module_span, module), _)) => {
-                    span = module_span.join(span);
-                    Some(module)
+        .map(|((first_span, first), opt_second)| {
+            let (span, module, primary) = match opt_second {
+                Some((_, (second_span, second))) => {
+                    (first_span.join(second_span), Some(first), second)
                 }
-                None => None,
+                None => (first_span, None, first),
             };
             GlobalName {
                 span,

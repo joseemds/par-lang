@@ -839,7 +839,9 @@ impl Type {
             Self::Name(span, name, args) => Self::Name(
                 span.clone(),
                 name.clone(),
-                args.into_iter().map(|arg| arg.dualize_self(label)).collect(),
+                args.into_iter()
+                    .map(|arg| arg.dualize_self(label))
+                    .collect(),
             ),
 
             Self::Pair(loc, t, u) => Self::Pair(
