@@ -747,6 +747,10 @@ impl Type {
     }
 
     pub fn dual(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
+        self.dual_helper(type_defs, true)
+    }
+
+    pub fn dual_helper(&self, type_defs: &TypeDefs, top_level: bool) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Dual(
                 span.clone(),
@@ -760,31 +764,35 @@ impl Type {
                 Box::new(Self::Var(span.clone(), name.clone())),
             ),
             Self::Name(span, name, args) => match type_defs.get_dual(span, name, args) {
-                Ok(dual) => dual,
-                Err(_) => Self::Dual(
+                Ok(dual) if top_level => dual,
+                _ => Self::Dual(
                     span.clone(),
                     Box::new(Self::Name(span.clone(), name.clone(), args.clone())),
                 ),
             },
 
-            Self::Pair(loc, t, u) => {
-                Self::Function(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
-            }
-            Self::Function(loc, t, u) => {
-                Self::Pair(loc.clone(), t.clone(), Box::new(u.dual(type_defs)?))
-            }
+            Self::Pair(loc, t, u) => Self::Function(
+                loc.clone(),
+                t.clone(),
+                Box::new(u.dual_helper(type_defs, false)?),
+            ),
+            Self::Function(loc, t, u) => Self::Pair(
+                loc.clone(),
+                t.clone(),
+                Box::new(u.dual_helper(type_defs, false)?),
+            ),
             Self::Either(span, branches) => Self::Choice(
                 span.clone(),
                 branches
                     .iter()
-                    .map(|(branch, t)| Ok((branch.clone(), t.dual(type_defs)?)))
+                    .map(|(branch, t)| Ok((branch.clone(), t.dual_helper(type_defs, false)?)))
                     .collect::<Result<_, _>>()?,
             ),
             Self::Choice(span, branches) => Self::Either(
                 span.clone(),
                 branches
                     .iter()
-                    .map(|(branch, t)| Ok((branch.clone(), t.dual(type_defs)?)))
+                    .map(|(branch, t)| Ok((branch.clone(), t.dual_helper(type_defs, false)?)))
                     .collect::<Result<_, _>>()?,
             ),
             Self::Break(span) => Self::Continue(span.clone()),
@@ -799,7 +807,7 @@ impl Type {
                 span: span.clone(),
                 asc: asc.clone(),
                 label: label.clone(),
-                body: Box::new(t.dual(type_defs)?.dualize_self(label)),
+                body: Box::new(t.dual_helper(type_defs, false)?.dualize_self(label)),
             },
             Self::Iterative {
                 span,
@@ -810,19 +818,23 @@ impl Type {
                 span: span.clone(),
                 asc: asc.clone(),
                 label: label.clone(),
-                body: Box::new(t.dual(type_defs)?.dualize_self(label)),
+                body: Box::new(t.dual_helper(type_defs, false)?.dualize_self(label)),
             },
             Self::Self_(span, label) => Self::Dual(
                 span.clone(),
                 Box::new(Self::Self_(span.clone(), label.clone())),
             ),
 
-            Self::Exists(loc, name, t) => {
-                Self::Forall(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
-            }
-            Self::Forall(loc, name, t) => {
-                Self::Exists(loc.clone(), name.clone(), Box::new(t.dual(type_defs)?))
-            }
+            Self::Exists(loc, name, t) => Self::Forall(
+                loc.clone(),
+                name.clone(),
+                Box::new(t.dual_helper(type_defs, false)?),
+            ),
+            Self::Forall(loc, name, t) => Self::Exists(
+                loc.clone(),
+                name.clone(),
+                Box::new(t.dual_helper(type_defs, false)?),
+            ),
         })
     }
 
@@ -1042,12 +1054,25 @@ impl Type {
                 asc,
                 label,
                 body: t,
-            } => Self::Iterative {
-                span,
-                asc,
-                label,
-                body: Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
-            },
+            } => {
+                if &label == top_label {
+                    Self::Iterative {
+                        span,
+                        asc,
+                        label,
+                        body: t,
+                    }
+                } else {
+                    Self::Iterative {
+                        span,
+                        asc,
+                        label,
+                        body: Box::new(
+                            t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?,
+                        ),
+                    }
+                }
+            }
             Self::Self_(span, label) => {
                 if &label == top_label {
                     Self::Recursive {
@@ -1160,12 +1185,25 @@ impl Type {
                 asc,
                 label,
                 body: t,
-            } => Self::Recursive {
-                span,
-                asc,
-                label,
-                body: Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
-            },
+            } => {
+                if &label == top_label {
+                    Self::Recursive {
+                        span,
+                        asc,
+                        label,
+                        body: t,
+                    }
+                } else {
+                    Self::Recursive {
+                        span,
+                        asc,
+                        label,
+                        body: Box::new(
+                            t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?,
+                        ),
+                    }
+                }
+            }
             Self::Iterative {
                 span,
                 asc,
