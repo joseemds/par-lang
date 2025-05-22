@@ -27,6 +27,7 @@ pub enum TokenKind {
     Arrow,
     Bang,
     Quest,
+    Star,
     Link,
 
     Integer,
@@ -98,6 +99,7 @@ impl TokenKind {
             TokenKind::Arrow => "=>",
             TokenKind::Bang => "!",
             TokenKind::Quest => "?",
+            TokenKind::Star => "*",
             TokenKind::Link => "<>",
 
             TokenKind::Integer => "integer",
@@ -355,6 +357,10 @@ pub fn lex<'s>(input: &'s str) -> Vec<Token<'s>> {
                 '?' => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;
                     Some((raw, TokenKind::Quest))
+                }
+                '*' => {
+                    let raw = any::<&str, Error>.take().parse_next(input)?;
+                    Some((raw, TokenKind::Star))
                 }
                 _ => {
                     let raw = any::<&str, Error>.take().parse_next(input)?;

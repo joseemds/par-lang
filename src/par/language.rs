@@ -78,6 +78,7 @@ pub enum Pattern {
 #[derive(Clone, Debug)]
 pub enum Expression {
     Primitive(Span, Primitive),
+    List(Span, Vec<Self>),
     Global(Span, GlobalName),
     Variable(Span, LocalName),
     Grouped(Span, Box<Self>),
@@ -458,6 +459,56 @@ impl Expression {
                 (),
             )),
 
+            Self::List(span, items) => {
+                let span = *span;
+                let mut process = Arc::new(process::Process::Do {
+                    span,
+                    name: LocalName::result(),
+                    typ: (),
+                    command: process::Command::Signal(
+                        LocalName {
+                            span,
+                            string: "empty".to_string(),
+                        },
+                        Arc::new(process::Process::Do {
+                            span,
+                            name: LocalName::result(),
+                            typ: (),
+                            command: process::Command::Break,
+                        }),
+                    ),
+                });
+                for item in items.iter().rev() {
+                    let span = item.span();
+                    process = Arc::new(process::Process::Do {
+                        span,
+                        name: LocalName::result(),
+                        typ: (),
+                        command: process::Command::Signal(
+                            LocalName {
+                                span,
+                                string: "item".to_string(),
+                            },
+                            Arc::new(process::Process::Do {
+                                span,
+                                name: LocalName::result(),
+                                typ: (),
+                                command: process::Command::Send(item.compile()?, process),
+                            }),
+                        ),
+                    });
+                }
+                Arc::new(process::Expression::Fork {
+                    span,
+                    captures: Captures::new(),
+                    chan_name: LocalName::result(),
+                    chan_annotation: None,
+                    chan_type: (),
+                    expr_type: (),
+                    process,
+                })
+            }
+
             Self::Global(span, name) => {
                 Arc::new(process::Expression::Global(span.clone(), name.clone(), ()))
             }
@@ -579,6 +630,7 @@ impl Spanning for Expression {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
+            | Self::List(span, _)
             | Self::Global(span, _)
             | Self::Variable(span, _)
             | Self::Grouped(span, _)

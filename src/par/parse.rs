@@ -716,6 +716,7 @@ fn pattern_receive_type(input: &mut Input) -> Result<Pattern> {
 fn expression(input: &mut Input) -> Result<Expression> {
     alt((
         expr_literal,
+        expr_list,
         expr_let,
         expr_do,
         expr_fork,
@@ -735,6 +736,15 @@ fn expr_grouped(input: &mut Input) -> Result<Expression> {
 
 fn expr_literal(input: &mut Input) -> Result<Expression> {
     alt((expr_literal_int, expr_literal_string, expr_literal_char)).parse_next(input)
+}
+
+fn expr_list(input: &mut Input) -> Result<Expression> {
+    commit_after(
+        t(TokenKind::Star),
+        (t(TokenKind::LParen), list(expression), t(TokenKind::RParen)),
+    )
+    .map(|(pre, (_, items, post))| Expression::List(pre.span.join(post.span), items))
+    .parse_next(input)
 }
 
 fn expr_literal_int(input: &mut Input) -> Result<Expression> {
