@@ -491,9 +491,9 @@ impl Compiler {
             } => self.normalize_type(
                 Type::expand_iterative(&asc, &label, &body, &self.type_defs).unwrap(),
             ),
-            Type::Chan(_, body) => {
+            Type::Dual(_, body) => {
                 let dual = body.dual(&self.type_defs).unwrap();
-                if matches!(dual, Type::Chan(..)) {
+                if matches!(dual, Type::Dual(..)) {
                     dual
                 } else {
                     self.normalize_type(dual)

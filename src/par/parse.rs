@@ -460,10 +460,10 @@ fn typ_name(input: &mut Input) -> Result<Type> {
 
 fn typ_chan(input: &mut Input) -> Result<Type> {
     commit_after(
-        t(TokenKind::Chan),
-        typ.context(StrContext::Label("chan type")),
+        t(TokenKind::Dual),
+        typ.context(StrContext::Label("dual type")),
     )
-    .map(|(pre, typ)| Type::Chan(pre.span.join(typ.span()), Box::new(typ)))
+    .map(|(pre, typ)| Type::Dual(pre.span.join(typ.span()), Box::new(typ)))
     .parse_next(input)
 }
 

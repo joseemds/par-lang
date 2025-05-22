@@ -60,7 +60,7 @@ pub enum Operation {
 #[derive(Clone, Debug)]
 pub enum Type {
     Primitive(Span, PrimitiveType),
-    Chan(Span, Box<Self>),
+    Dual(Span, Box<Self>),
     Var(Span, LocalName),
     Name(Span, GlobalName, Vec<Self>),
     Pair(Span, Box<Self>, Box<Self>),
@@ -116,8 +116,8 @@ impl Type {
         Self::Primitive(Default::default(), PrimitiveType::Char)
     }
 
-    pub fn chan(t: Self) -> Self {
-        Self::Chan(Default::default(), Box::new(t))
+    pub fn dual_(t: Self) -> Self {
+        Self::Dual(Default::default(), Box::new(t))
     }
 
     pub fn name(module: Option<&'static str>, primary: &'static str, args: Vec<Self>) -> Self {
@@ -334,7 +334,7 @@ impl TypeDefs {
     ) -> Result<(), TypeError> {
         Ok(match typ {
             Type::Primitive(_, _) => (),
-            Type::Chan(_, t) => self.validate_type(t, deps, self_neg, self_pos)?,
+            Type::Dual(_, t) => self.validate_type(t, deps, self_neg, self_pos)?,
             Type::Var(span, name) => {
                 if self.vars.contains(name) {
                     ()
@@ -398,7 +398,7 @@ impl Spanning for Type {
     fn span(&self) -> Span {
         match self {
             Self::Primitive(span, _)
-            | Self::Chan(span, _)
+            | Self::Dual(span, _)
             | Self::Var(span, _)
             | Self::Name(span, _, _)
             | Self::Pair(span, _, _)
@@ -420,7 +420,7 @@ impl Type {
     pub fn substitute(self, var: &LocalName, typ: &Self) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-            Self::Chan(span, t) => Self::Chan(span, Box::new(t.substitute(var, typ)?)),
+            Self::Dual(span, t) => Self::Dual(span, Box::new(t.substitute(var, typ)?)),
             Self::Var(span, name) => {
                 if &name == var {
                     typ.clone()
@@ -510,7 +510,7 @@ impl Type {
     pub fn is_positive(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(match self {
             Self::Primitive(_, _) => true,
-            Self::Chan(_, t) => t.is_negative(type_defs)?,
+            Self::Dual(_, t) => t.is_negative(type_defs)?,
             Self::Var(_, _) => false,
             Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_positive(type_defs)?
@@ -545,7 +545,7 @@ impl Type {
     pub fn is_negative(&self, type_defs: &TypeDefs) -> Result<bool, TypeError> {
         Ok(match self {
             Self::Primitive(_, _) => true,
-            Self::Chan(_, t) => t.is_positive(type_defs)?,
+            Self::Dual(_, t) => t.is_positive(type_defs)?,
             Self::Var(_, _) => false,
             Self::Name(loc, name, args) => {
                 type_defs.get(loc, name, args)?.is_negative(type_defs)?
@@ -605,15 +605,15 @@ impl Type {
             }
             (Self::Primitive(_, p1), Self::Primitive(_, p2)) => p1 == p2,
 
-            (Self::Chan(_, dual_t1), Self::Chan(_, dual_t2)) => {
+            (Self::Dual(_, dual_t1), Self::Dual(_, dual_t2)) => {
                 dual_t2.is_assignable_to(dual_t1, type_defs, ind)?
             }
-            (Self::Chan(_, dual_t1), t2) => match t2.dual(type_defs)? {
-                Self::Chan(_, _) => false,
+            (Self::Dual(_, dual_t1), t2) => match t2.dual(type_defs)? {
+                Self::Dual(_, _) => false,
                 dual_t2 => dual_t2.is_assignable_to(dual_t1, type_defs, ind)?,
             },
-            (t1, Self::Chan(_, dual_t2)) => match t1.dual(type_defs)? {
-                Self::Chan(_, _) => false,
+            (t1, Self::Dual(_, dual_t2)) => match t1.dual(type_defs)? {
+                Self::Dual(_, _) => false,
                 dual_t1 => dual_t2.is_assignable_to(&dual_t1, type_defs, ind)?,
             },
 
@@ -748,20 +748,20 @@ impl Type {
 
     pub fn dual(&self, type_defs: &TypeDefs) -> Result<Self, TypeError> {
         Ok(match self {
-            Self::Primitive(span, p) => Self::Chan(
+            Self::Primitive(span, p) => Self::Dual(
                 span.clone(),
                 Box::new(Self::Primitive(span.clone(), p.clone())),
             ),
 
-            Self::Chan(_, t) => *t.clone(),
+            Self::Dual(_, t) => *t.clone(),
 
-            Self::Var(span, name) => Self::Chan(
+            Self::Var(span, name) => Self::Dual(
                 span.clone(),
                 Box::new(Self::Var(span.clone(), name.clone())),
             ),
             Self::Name(span, name, args) => match type_defs.get_dual(span, name, args) {
                 Ok(dual) => dual,
-                Err(_) => Self::Chan(
+                Err(_) => Self::Dual(
                     span.clone(),
                     Box::new(Self::Name(span.clone(), name.clone(), args.clone())),
                 ),
@@ -799,7 +799,7 @@ impl Type {
                 span: span.clone(),
                 asc: asc.clone(),
                 label: label.clone(),
-                body: Box::new(t.dual(type_defs)?.chan_self(label)),
+                body: Box::new(t.dual(type_defs)?.dualize_self(label)),
             },
             Self::Iterative {
                 span,
@@ -810,9 +810,9 @@ impl Type {
                 span: span.clone(),
                 asc: asc.clone(),
                 label: label.clone(),
-                body: Box::new(t.dual(type_defs)?.chan_self(label)),
+                body: Box::new(t.dual(type_defs)?.dualize_self(label)),
             },
-            Self::Self_(span, label) => Self::Chan(
+            Self::Self_(span, label) => Self::Dual(
                 span.clone(),
                 Box::new(Self::Self_(span.clone(), label.clone())),
             ),
@@ -826,44 +826,44 @@ impl Type {
         })
     }
 
-    fn chan_self(self, label: &Option<LocalName>) -> Self {
+    fn dualize_self(self, label: &Option<LocalName>) -> Self {
         match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
 
-            Self::Chan(span, t) => match *t {
+            Self::Dual(span, t) => match *t {
                 Self::Self_(span, label1) if &label1 == label => Self::Self_(span, label1),
-                t => Self::Chan(span, Box::new(t.chan_self(label))),
+                t => Self::Dual(span, Box::new(t.dualize_self(label))),
             },
 
             Self::Var(span, name) => Self::Var(span, name),
             Self::Name(span, name, args) => Self::Name(
                 span.clone(),
                 name.clone(),
-                args.into_iter().map(|arg| arg.chan_self(label)).collect(),
+                args.into_iter().map(|arg| arg.dualize_self(label)).collect(),
             ),
 
             Self::Pair(loc, t, u) => Self::Pair(
                 loc.clone(),
-                Box::new(t.chan_self(label)),
-                Box::new(u.chan_self(label)),
+                Box::new(t.dualize_self(label)),
+                Box::new(u.dualize_self(label)),
             ),
             Self::Function(loc, t, u) => Self::Function(
                 loc.clone(),
-                Box::new(t.chan_self(label)),
-                Box::new(u.chan_self(label)),
+                Box::new(t.dualize_self(label)),
+                Box::new(u.dualize_self(label)),
             ),
             Self::Either(span, branches) => Self::Either(
                 span.clone(),
                 branches
                     .into_iter()
-                    .map(|(branch, t)| (branch, t.chan_self(label)))
+                    .map(|(branch, t)| (branch, t.dualize_self(label)))
                     .collect(),
             ),
             Self::Choice(span, branches) => Self::Choice(
                 span.clone(),
                 branches
                     .into_iter()
-                    .map(|(branch, t)| (branch, t.chan_self(label)))
+                    .map(|(branch, t)| (branch, t.dualize_self(label)))
                     .collect(),
             ),
             Self::Break(span) => Self::Break(span.clone()),
@@ -887,7 +887,7 @@ impl Type {
                         span,
                         asc,
                         label: label1,
-                        body: Box::new(t.chan_self(label)),
+                        body: Box::new(t.dualize_self(label)),
                     }
                 }
             }
@@ -909,23 +909,23 @@ impl Type {
                         span,
                         asc,
                         label: label1,
-                        body: Box::new(t.chan_self(label)),
+                        body: Box::new(t.dualize_self(label)),
                     }
                 }
             }
             Self::Self_(span, label1) => {
                 if &label1 == label {
-                    Self::Chan(span.clone(), Box::new(Self::Self_(span, label1)))
+                    Self::Dual(span.clone(), Box::new(Self::Self_(span, label1)))
                 } else {
                     Self::Self_(span, label1)
                 }
             }
 
             Self::Exists(loc, name, t) => {
-                Self::Exists(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
+                Self::Exists(loc.clone(), name.clone(), Box::new(t.dualize_self(label)))
             }
             Self::Forall(loc, name, t) => {
-                Self::Forall(loc.clone(), name.clone(), Box::new(t.chan_self(label)))
+                Self::Forall(loc.clone(), name.clone(), Box::new(t.dualize_self(label)))
             }
         }
     }
@@ -950,14 +950,14 @@ impl Type {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
 
-            Self::Chan(span, t) => match *t {
+            Self::Dual(span, t) => match *t {
                 Self::Self_(span, label) if &label == top_label => Self::Iterative {
                     span,
                     asc: top_asc.clone(),
                     label: label.clone(),
-                    body: Box::new(top_body.dual(type_defs)?.chan_self(&label)),
+                    body: Box::new(top_body.dual(type_defs)?.dualize_self(&label)),
                 },
-                t => Self::Chan(
+                t => Self::Dual(
                     span,
                     Box::new(t.expand_recursive_helper(top_asc, top_label, top_body, type_defs)?),
                 ),
@@ -1092,14 +1092,14 @@ impl Type {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
 
-            Self::Chan(span, t) => match *t {
+            Self::Dual(span, t) => match *t {
                 Self::Self_(span, label) if &label == top_label => Self::Recursive {
                     span,
                     asc: top_asc.clone(),
                     label: label.clone(),
-                    body: Box::new(top_body.dual(type_defs)?.chan_self(&label)),
+                    body: Box::new(top_body.dual(type_defs)?.dualize_self(&label)),
                 },
-                t => Self::Chan(
+                t => Self::Dual(
                     span,
                     Box::new(t.expand_iterative_helper(top_asc, top_label, top_body, type_defs)?),
                 ),
@@ -1271,7 +1271,7 @@ impl Type {
                 t.invalidate_ascendent(label);
             }
 
-            Self::Chan(_, t) => {
+            Self::Dual(_, t) => {
                 t.invalidate_ascendent(label);
             }
         }
@@ -1305,7 +1305,7 @@ impl Type {
             Self::Exists(_, _, body) => body.contains_self(label),
             Self::Forall(_, _, body) => body.contains_self(label),
 
-            Self::Chan(_, t) => t.contains_self(label),
+            Self::Dual(_, t) => t.contains_self(label),
         }
     }
 }
@@ -1603,9 +1603,9 @@ impl Context {
                 );
             }
         }
-        if let Type::Chan(_, dual_typ) = typ {
+        if let Type::Dual(_, dual_typ) = typ {
             match dual_typ.dual(&self.type_defs)? {
-                Type::Chan(_, _) => {}
+                Type::Dual(_, _) => {}
                 typ => {
                     return self.check_command(
                         inference_subject,
@@ -2405,7 +2405,7 @@ impl Type {
     pub fn qualify(&mut self, module: &str) {
         match self {
             Self::Primitive(_, _) => {}
-            Self::Chan(_, t) => t.qualify(module),
+            Self::Dual(_, t) => t.qualify(module),
             Self::Var(_, _) => {}
             Self::Name(_, name, args) => {
                 name.qualify(module);
@@ -2456,8 +2456,8 @@ impl Type {
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
-            Self::Chan(_, body) => {
-                write!(f, "chan ")?;
+            Self::Dual(_, body) => {
+                write!(f, "dual ")?;
                 body.pretty(f, indent)
             }
             Self::Var(_, name) => write!(f, "{}", name),
@@ -2590,8 +2590,8 @@ impl Type {
             Self::Primitive(_, PrimitiveType::String) => write!(f, "String"),
             Self::Primitive(_, PrimitiveType::Char) => write!(f, "Char"),
 
-            Self::Chan(_, body) => {
-                write!(f, "chan ")?;
+            Self::Dual(_, body) => {
+                write!(f, "dual ")?;
                 body.pretty_compact(f)
             }
             Self::Var(_, name) => write!(f, "{}", name),

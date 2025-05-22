@@ -5,7 +5,7 @@ type Tree<a> = recursive either {
 
 dec Flatten : [type a] [Tree<a>] List<a>
 def Flatten = [type a] [tree] chan yield {
-  let yield: chan List<a> = tree.begin.case {
+  let yield: dual List<a> = tree.begin.case {
     .empty! => yield,
 
     .node(left, value, right)! => do {

@@ -238,7 +238,7 @@ impl TypedHandle {
             Type::Primitive(_, PrimitiveType::String) => TypedReadback::String(self.string().await),
             Type::Primitive(_, PrimitiveType::Char) => TypedReadback::Char(self.char().await),
 
-            typ @ Type::Chan(_, dual) => match dual.as_ref() {
+            typ @ Type::Dual(_, dual) => match dual.as_ref() {
                 Type::Primitive(_, PrimitiveType::Nat) => {
                     TypedReadback::NatRequest(Box::new(move |value| self.provide_nat(value)))
                 }
@@ -312,13 +312,13 @@ impl TypedHandle {
         assert!(value >= BigInt::ZERO);
 
         self.prepare_for_readback();
-        let Type::Chan(span, dual) = self.tree.ty else {
+        let Type::Dual(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_nat`: {:?}", self.tree.ty);
         };
         let Type::Primitive(_, PrimitiveType::Nat | PrimitiveType::Int) = *dual else {
             panic!(
                 "Incorrect type for `provide_nat`: {:?}",
-                Type::Chan(span, dual)
+                Type::Dual(span, dual)
             );
         };
 
@@ -346,13 +346,13 @@ impl TypedHandle {
 
     pub fn provide_int(mut self, value: BigInt) {
         self.prepare_for_readback();
-        let Type::Chan(span, dual) = self.tree.ty else {
+        let Type::Dual(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_int`: {:?}", self.tree.ty);
         };
         let Type::Primitive(_, PrimitiveType::Int) = *dual else {
             panic!(
                 "Incorrect type for `provide_int`: {:?}",
-                Type::Chan(span, dual)
+                Type::Dual(span, dual)
             );
         };
 
@@ -380,13 +380,13 @@ impl TypedHandle {
 
     pub fn provide_string(mut self, value: Substr) {
         self.prepare_for_readback();
-        let Type::Chan(span, dual) = self.tree.ty else {
+        let Type::Dual(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_string`: {:?}", self.tree.ty);
         };
         let Type::Primitive(_, PrimitiveType::String) = *dual else {
             panic!(
                 "Incorrect type for `provide_string`: {:?}",
-                Type::Chan(span, dual)
+                Type::Dual(span, dual)
             );
         };
 
@@ -414,13 +414,13 @@ impl TypedHandle {
 
     pub fn provide_char(mut self, value: char) {
         self.prepare_for_readback();
-        let Type::Chan(span, dual) = self.tree.ty else {
+        let Type::Dual(span, dual) = self.tree.ty else {
             panic!("Incorrect type for `provide_char`: {:?}", self.tree.ty);
         };
         let Type::Primitive(_, PrimitiveType::Char) = *dual else {
             panic!(
                 "Incorrect type for `provide_char`: {:?}",
-                Type::Chan(span, dual)
+                Type::Dual(span, dual)
             );
         };
 

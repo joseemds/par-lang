@@ -1,6 +1,6 @@
 dec BubbleSort : [List<Nat>] List<Nat>
 def BubbleSort = [list] chan yield {
-  let yield: chan List<Nat> = list.unfounded.case {
+  let yield: dual List<Nat> = list.unfounded.case {
     .empty! => yield,
     .item(first) tail => do {
       let (head, last)! = BubbleSortStep(first, tail)
