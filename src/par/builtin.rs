@@ -713,13 +713,13 @@ async fn string_reader(mut handle: Handle) {
 
                 match best_match {
                     Some((i, j)) => {
-                        handle.signal(1, 3); // match
+                        handle.signal(2, 3); // match
                         handle.send().provide_string(remainder.substr(..i));
                         handle.send().provide_string(remainder.substr(i..j));
                         remainder = remainder.substr(j..);
                     }
                     None => {
-                        handle.signal(0, 3); // fail
+                        handle.signal(1, 3); // fail
                     }
                 }
             }
@@ -744,14 +744,14 @@ async fn string_reader(mut handle: Handle) {
 
                 match m.leftmost_accepting_split() {
                     Some(i) => {
-                        handle.signal(1, 3); // match
+                        handle.signal(2, 3); // match
                         handle.send().provide_string(remainder.substr(..i));
                         handle.send().provide_string(remainder.substr(i..));
                         handle.break_();
                         return;
                     }
                     None => {
-                        handle.signal(0, 3); // fail
+                        handle.signal(1, 3); // fail
                     }
                 }
             }
@@ -767,9 +767,11 @@ async fn string_reader(mut handle: Handle) {
 
 #[derive(Debug, Clone)]
 enum Pattern {
+    Nil,
+    All,
     Empty,
     Length(BigInt),
-    Exact(Substr),
+    Str(Substr),
     One(CharClass),
     Non(CharClass),
     Concat(Box<Self>, Box<Self>),
@@ -783,72 +785,69 @@ impl Pattern {
     async fn readback(mut handle: Handle) -> Box<Self> {
         match handle.case(10).await {
             0 => {
-                // .and(self, self) self
-                let left = Box::pin(Self::readback(handle.receive())).await;
-                let right = Box::pin(Self::readback(handle.receive())).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::And(left, right)), then))
+                // .and List<self>
+                let mut conj = Box::new(Self::All);
+                let patterns =
+                    readback_list(handle, |handle| Box::pin(Self::readback(handle))).await;
+                for p in patterns.into_iter().rev() {
+                    conj = Box::new(Self::And(p, conj));
+                }
+                conj
             }
             1 => {
-                // .e!
-                handle.continue_();
-                Box::new(Self::Empty)
+                // .concat List<self>
+                let mut conc = Box::new(Self::Empty);
+                let patterns =
+                    readback_list(handle, |handle| Box::pin(Self::readback(handle))).await;
+                for p in patterns.into_iter().rev() {
+                    conc = Box::new(Self::Concat(p, conc));
+                }
+                conc
             }
             2 => {
-                // .length(Nat) self
-                let n = handle.receive().nat().await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Length(n)), then))
+                // .empty!
+                handle.break_();
+                Box::new(Self::Empty)
             }
             3 => {
-                // .non(Char.Class) self
-                let class = CharClass::readback(handle.receive()).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Non(class)), then))
+                // .length Nat
+                let n = handle.nat().await;
+                Box::new(Self::Length(n))
             }
             4 => {
-                // .one(Char.Class) self
-                let class = CharClass::readback(handle.receive()).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::One(class)), then))
+                // .non Char.Class
+                let class = CharClass::readback(handle).await;
+                Box::new(Self::Non(class))
             }
             5 => {
-                // .or(self, self) self
-                let left = Box::pin(Self::readback(handle.receive())).await;
-                let right = Box::pin(Self::readback(handle.receive())).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Or(left, right)), then))
+                // .one Char.Class
+                let class = CharClass::readback(handle).await;
+                Box::new(Self::One(class))
             }
             6 => {
-                // .repeat(self) self
-                let pat = Box::pin(Self::readback(handle.receive())).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Repeat(pat)), then))
+                // .or List<self>,
+                let mut disj = Box::new(Self::Nil);
+                let patterns =
+                    readback_list(handle, |handle| Box::pin(Self::readback(handle))).await;
+                for p in patterns.into_iter().rev() {
+                    disj = Box::new(Self::Or(p, disj));
+                }
+                disj
             }
             7 => {
-                // .repeat1(self) self
-                let pat = Box::pin(Self::readback(handle.receive())).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Repeat1(pat)), then))
+                // .repeat self
+                let p = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Repeat(p))
             }
             8 => {
-                // .s(String) self
-                let string = handle.receive().string().await;
-                let then = Box::pin(Self::readback(handle)).await;
-                Box::new(Self::Concat(Box::new(Self::Exact(string)), then))
+                // .repeat1 self
+                let p = Box::pin(Self::readback(handle)).await;
+                Box::new(Self::Repeat1(p))
             }
             9 => {
-                // .times(Nat.Nat, self) self
-                let number = handle.receive().nat().await;
-                let pat = Box::pin(Self::readback(handle.receive())).await;
-                let then = Box::pin(Self::readback(handle)).await;
-                let mut repeated = then;
-                let mut remaining = number;
-                while remaining > BigInt::ZERO {
-                    repeated = Box::new(Self::Concat(pat.clone(), repeated));
-                    remaining -= 1;
-                }
-                repeated
+                // .str String
+                let s = handle.string().await;
+                Box::new(Self::Str(s))
             }
             _ => unreachable!(),
         }
@@ -905,11 +904,15 @@ struct MachineInner {
 impl MachineInner {
     fn start(pattern: &Pattern, start: usize) -> Self {
         let state = match pattern {
+            Pattern::Nil => State::Halt,
+
+            Pattern::All => State::Init,
+
             Pattern::Empty => State::Init,
 
             Pattern::Length(_) => State::Index(0),
 
-            Pattern::Exact(_) => State::Index(0),
+            Pattern::Str(_) => State::Index(0),
 
             Pattern::One(_) => State::Index(0),
             Pattern::Non(_) => State::Index(0),
@@ -940,11 +943,13 @@ impl MachineInner {
         match (pattern, &self.state) {
             (_, State::Halt) => None,
 
+            (Pattern::All, State::Init) => Some(true),
+
             (Pattern::Empty, State::Init) => Some(true),
 
             (Pattern::Length(n), State::Index(i)) => Some(n == &BigInt::from(*i)),
 
-            (Pattern::Exact(s), State::Index(i)) => Some(s.len() == *i),
+            (Pattern::Str(s), State::Index(i)) => Some(s.len() == *i),
 
             (Pattern::One(_), State::Index(i)) => Some(*i == 1),
             (Pattern::Non(_), State::Index(i)) => Some(*i == 1),
@@ -982,6 +987,8 @@ impl MachineInner {
         match (pattern, &mut self.state) {
             (_, State::Halt) => {}
 
+            (Pattern::All, State::Init) => {}
+
             (Pattern::Empty, State::Init) => self.state = State::Halt,
 
             (Pattern::Length(n), State::Index(i)) => {
@@ -992,7 +999,7 @@ impl MachineInner {
                 }
             }
 
-            (Pattern::Exact(s), State::Index(i)) => {
+            (Pattern::Str(s), State::Index(i)) => {
                 if s.substr(*i..).chars().next() == Some(ch) {
                     *i += ch.len_utf8();
                 } else {
@@ -1024,6 +1031,7 @@ impl MachineInner {
                 if m1.accepts(p1) == Some(true) {
                     heap.push(Self::start(p2, pos + ch.len_utf8()));
                 }
+                heap.sort_by_key(|m| m.start);
                 heap.sort();
                 heap.dedup();
                 if m1.state == State::Halt && heap.is_empty() {
@@ -1060,6 +1068,7 @@ impl MachineInner {
                     m.advance(p, pos, ch);
                 }
                 heap.retain(|m| m.state != State::Halt);
+                heap.sort_by_key(|m| m.start);
                 heap.sort();
                 heap.dedup();
                 if heap.is_empty() {
@@ -1240,6 +1249,31 @@ async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handl
                 handle.signal(0, 2); // empty
                 handle.break_();
                 return;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+async fn readback_list<T, F>(
+    mut handle: Handle,
+    mut readback_item: impl FnMut(Handle) -> F,
+) -> Vec<T>
+where
+    F: Future<Output = T>,
+{
+    let mut items = Vec::new();
+    loop {
+        match handle.case(2).await {
+            0 => {
+                // empty
+                handle.break_();
+                return items;
+            }
+            1 => {
+                // item
+                let item = readback_item(handle.receive()).await;
+                items.push(item);
             }
             _ => unreachable!(),
         }

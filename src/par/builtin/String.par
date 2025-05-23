@@ -19,14 +19,14 @@ type Reader = recursive iterative/attempt choice {
 }
 
 type Pattern = recursive either {
-  .e!,
-  .s(String) self,
-  .one(Char.Class) self,
-  .non(Char.Class) self,
-  .length(Nat.Nat) self,
-  .repeat(self) self,
-  .repeat1(self) self,
-  .times(Nat.Nat, self) self,
-  .and(self, self) self,
-  .or(self, self) self,
+  .empty!,
+  .str String,
+  .one Char.Class,
+  .non Char.Class,
+  .length Nat.Nat,
+  .repeat self,
+  .repeat1 self,
+  .concat List.List<self>,
+  .and List.List<self>,
+  .or List.List<self>,
 }
