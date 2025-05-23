@@ -572,6 +572,12 @@ pub fn expand_type(typ: Type, type_defs: &TypeDefs) -> Type {
     let mut typ = typ;
     loop {
         typ = match typ {
+            Type::Dual(_, ref t) => match t.as_ref() {
+                Type::Primitive(_, _) => break typ,
+                Type::Var(_, _) => break typ,
+                Type::Name(span, name, args) => type_defs.get_dual(&span, &name, &args).unwrap(),
+                _ => panic!("too many duals"),
+            },
             Type::Name(span, name, args) => type_defs.get(&span, &name, &args).unwrap(),
             Type::Recursive {
                 span: _,
