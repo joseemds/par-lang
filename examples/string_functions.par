@@ -1,0 +1,50 @@
+def Trim = [s: String, c: Char.Class] chan ret {
+  let r = String.Reader(s)
+  r.match(.empty!, .repeat.one c).case {
+    .empty! => { ret <> "" }
+    .fail => {}
+    .match(_, _) => {}
+  }
+  r.matchEnd(.repeat.one.any!, .repeat.one c).case {
+    .empty! => { ret <> "" }
+    .fail => {
+      r.close
+      ret <> ""
+    }
+    .match(trimmed, _)! => {
+      ret <> trimmed
+    }
+  }
+}
+
+def TestTrim = Trim("  Hello, world!    ", .whitespace!)
+
+dec Find : [String, String.Pattern] either {
+  .none!,
+  .some(String, String, String)!,
+}
+def Find = [s, p] String.Reader(s).match(.repeat.one.any!, p).case {
+  .empty! => .none!,
+  .fail r => do { r.close } in .none!,
+  .match(before, found) r => .some(before, found, r.remainder)!
+}
+
+def TestFind = Find("This is a random sentence.", .str "random")
+
+dec Split : [String, Char.Class] List<String>
+def Split = [s, c] chan yield {
+  let r = String.Reader(s)
+  r.begin.match(.repeat.one c, .repeat1.non c).case {
+    .empty! => { yield.empty! }
+    .fail => {
+       r.close
+       yield.empty!
+    }
+    .match(_, part) => {
+      yield.item(part)
+      r.loop
+    }
+  }
+}
+
+def TestSplit = Split("  Some   more words .", .whitespace!)
