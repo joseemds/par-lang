@@ -346,13 +346,16 @@ impl TypeDefs {
                 }
             }
             Type::Name(span, name, args) => {
-                let mut deps = deps.clone();
+                for arg in args {
+                    self.validate_type(arg, &deps, self_pos, self_neg)?;
+                }
+                /*let mut deps = deps.clone();
                 if !deps.insert(name.clone()) {
                     return Err(TypeError::DependencyCycle(
                         span.clone(),
                         deps.into_iter().skip_while(|dep| dep != name).collect(),
                     ));
-                }
+                }*/
                 let t = self.get(span, name, args)?;
                 self.validate_type(&t, &deps, self_pos, self_neg)?;
             }
