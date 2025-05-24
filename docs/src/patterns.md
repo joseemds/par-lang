@@ -105,7 +105,7 @@ If the type of the value matched is already known, a type annotation would have 
 Such an annotation can be useful for declaring functions, though:
 ```par
 // no extra type annotation/declaration needed
-def negate = [b: Bool] let result: Bool = b {
+def Negate = [b: Bool] let result: Bool = b {
   .true! => .false!
   .false! => .true!
 } in result
@@ -133,20 +133,20 @@ It can only be used on values of type `!`.
 ```par
 // if there is a value of a type T,
 // there is a function [!] T
-def returns_true: [!] Bool = [!] .true!
+def ReturnsTrue: [!] Bool = [!] .true!
 
 // ! can be used to destroy a unit
-def drop_two_bools: [Bool, Bool] ! = 
+def DropTwoBools: [Bool, Bool] ! = 
   [b1, b2] let ! = drop(b1) in drop(b2)
 
 // though process syntax is generally used for this
-def drop_two_bools: [Bool, Bool] ! = [b1, b2] do {
+def DropTwoBools: [Bool, Bool] ! = [b1, b2] do {
   drop(b1)?
   drop(b2)?
 } in !
 
-dec drop_bool : [Bool] ! 
-?def drop_bool = [b] {
+dec DropBool : [Bool] ! 
+?def DropBool = [b] {
 ?  .true! => !
 ?  .false! => !
 ?}
@@ -178,8 +178,8 @@ Having multiple patterns between `(` and `)` is just syntax sugar:
 
 A pair pattern is used to destruct a value of a [pair type](types.md#pair-types):
 ```par
-dec uncurry : [type A, B, C] [[A, B] C] [(A, B)!] C
-def uncurry = [type A, B, C] [f] [(a, b)!] f(a, b)
+dec uncurry : [type a, b, c] [[a, b] c] [(a, b)!] c
+def uncurry = [type a, b, c] [f] [(a, b)!] f(a, b)
 ```
 
 ## Existential Patterns
@@ -210,7 +210,7 @@ An existential pattern is used to destruct a value of an [existential type](type
 ```par
 type Any = (type T) T
 
-def any_test: Any = do {
+def AnyTest: Any = do {
   let x: Any = (type Bool) .true!
   let (type X) x_val = x
   // X = Bool

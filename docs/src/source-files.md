@@ -15,11 +15,11 @@ Currently, every Par program consists entierely of [items](items.md):
 - Value definitions and declarations
   ```par
   // type and value together
-  def name: Type = value
+  def Name: Type = value
 
   // separate type declaration
-  dec name : Type
-  def name = value
+  dec Name : Type
+  def Name = value
   ```
 
 [_Item_]: items.md

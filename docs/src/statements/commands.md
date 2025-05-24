@@ -129,9 +129,9 @@ do {
 
 It can also be used with `chan`: Destructing `[A] chan B` to dually construct `(A) B`
 ```par
-def true_false: (Bool) Bool = chan return: [Bool] chan Bool {
+def true_false: (Bool) Bool = chan return: [Bool] dual Bool {
   return(.true!)
-  // return is now a chan Bool
+  // return is now a dual Bool
   return <> .false!
 }
 ```
@@ -159,8 +159,8 @@ r[p][q]
 
 A receive command can destruct a pair:
 ```par
-dec reverse : [type A, B] [(A) B] (B) A
-def reverse = [type A, B] [pair] do {
+dec Reverse : [type a, b] [(a) b] (b) a
+def Reverse = [type a, b] [pair] do {
   // receive first value
   pair[first]
   // if pair was (a) b :
@@ -171,11 +171,11 @@ def reverse = [type A, B] [pair] do {
 
 It can also be used with `chan`: Destructing `(A) chan B` to dually construct `[A] B`
 ```par
-def negate: [Bool] Bool = chan return: (Bool) chan Bool {
+def Negate: [Bool] Bool = chan return: (Bool) dual Bool {
   // receive the argument
   return[arg]
-  // return is now a chan Bool
-  return <> arg {
+  // return is now a dual Bool
+  return <> arg.case {
     .true! => .false!
     .false! => .true!
   }
@@ -197,18 +197,18 @@ def negate: [Bool] Bool = chan return: (Bool) chan Bool {
 
 A signal command can destruct a choice:
 ```par
-type Stream<T> = iterative {
+type Stream<t> = iterative {
   .close => !
-  .next => (T) self
+  .next => (t) self
 }
 
-dec first_two : [type T] [Stream<T>] (T, T)!
-def first_two = [type T] [stream] do {
+dec FirstTwo : [type t] [Stream<t>] (t, t)!
+def FirstTwo = [type t] [stream] do {
   // signal next
   stream.next
-  // stream is now (T) Stream<T>
+  // stream is now (t) Stream<t>
   stream[first]
-  // stream is now again Stream<T>
+  // stream is now again Stream<t>
 
   // combine both operations
   stream.next[second]
@@ -219,13 +219,13 @@ def first_two = [type T] [stream] do {
 ```
 It can also be used with `chan`: Destructing a choice type to dually construct an either type:
 ```par
-// chan Bool is equal to
-type ChanBool = {
+// dual Bool is equal to
+type ChanBool = choice {
   .true => ?
   .false => ?
 }
 
-def just_true: Bool = chan return: ChanBool {
+def JustTrue: Bool = chan return: ChanBool {
   // signal true
   return.true
   // return is now ?
@@ -280,7 +280,7 @@ x {
 
 A match command can destruct an either type:
 ```par
-def drop_bool: [Bool] ! = [b] do {
+def DropBool: [Bool] ! = [b] do {
   // match on b
   b {
     .true => {
@@ -296,7 +296,7 @@ def drop_bool: [Bool] ! = [b] do {
 It can also be used with `chan`: Destructing an either type to dually construct a choice type:
 ```par
 // choice of two
-type BoolChoice<A, B> = {
+type BoolChoice<A, B> = choice {
   .true => A
   .false => B
 }
@@ -307,8 +307,8 @@ type ChanBoolChoice<A, B> = either {
   .false chan B
 }
 
-dec negate_choice : BoolChoice<Bool, Bool>
-def negate_choice = chan return: ChanBoolChoice<Bool, Bool> {
+dec NegateChoice : BoolChoice<Bool, Bool>
+def NegateChoice = chan return: ChanBoolChoice<Bool, Bool> {
   return {
     .true => {
       // return is now of type chan Bool
@@ -350,28 +350,28 @@ For examples, see recursive destructing [expressions](../expressions/application
 
 A recursive command can destruct a recursive type:
 ```par
-def list_and: [List<Bool>] Bool = [list] do {
+def ListAnd: [List<Bool>] Bool = [list] do {
   let result: Bool = .true!
 
   // destruct list recursively
-  list begin {
+  list.begin.case {
     // after begin, list is of type
     // either { .empty!, .item(Bool) List<Bool> }
     // notice the absence of recursive
     .item => {
       // list is now of type (Bool) List<Bool>
       list[b]
-      b {
+      b.case {
         .true! => {}
         .false! => {
-          drop_bool(result)?
+          DropBool(result)?
           // reassign result here
           let result: Bool = .false!
         }
       }
       // list is now of type List<Bool>
       // go to begin
-      list loop
+      list.loop
     }
     .empty! => {}
   }
@@ -393,23 +393,6 @@ could have been replaced with
 
 A very important concept is that all values which were consumed between `begin` and `loop` must be reassigned (like `result` in the example). This even allows variables to change in between the iterations:
 ```par
-def first_nats: [Nat] List<Nat> = [n] do {
-  // initialize "mutable" value
-  let list: List<Nat> = .empty!
-  n begin {
-    .zero! => {
-      // also reassign, but for after `in`
-      let list = .item(.zero!) list
-    }
-    .succ pred => {
-      // here pred gets reassigned
-      let (pred, p)! = copy_nat(pred)
-      // and list gets reassigned as well
-      let list = .item(.succ p) list
-      pred loop
-    }
-  } 
-} in list
 ```
 
 A recursive command can also be used with `chan`: Destructing a recursive (here: either) type to dually construct an iterative (here: choice) type:
@@ -420,10 +403,10 @@ type ChanStreamBool = recursive either {
   .next[T] self
 }
 
-def alt_true_false: Stream<Bool> = chan return: ChanStreamBool {
+def AltTrueFalse: Stream<Bool> = chan return: ChanStreamBool {
   let next: Bool = .true!
   // begin recursive destruction
-  return begin {
+  return.begin.case {
     // return is now of type 
     // either { .close?, .next[T] ChanStreamBool }
     // again, notice the absence of recursive
@@ -436,7 +419,7 @@ def alt_true_false: Stream<Bool> = chan return: ChanStreamBool {
     .next => {
       // return is now of type [T] ChanStreamBool
       // handle next first
-      next {
+      next.case {
         .true! => {
           let yield = .true!
           let next = .false!

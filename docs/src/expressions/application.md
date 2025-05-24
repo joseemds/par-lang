@@ -179,22 +179,22 @@ If that is not the case, the unsafe `unfounded begin` must be used, which leaves
 
 Consider the recursive type
 ```par
-type List<T> = recursive either {
+type List<t> = recursive either {
   .empty!,
-  .item(T) self,
+  .item(t) self,
 }
 ```
 
 This is a total `begin`-`loop`
 ```par
-dec reverse : [type T] [List<T>] List<T>
-def reverse = [type T] [list] do {
-  let rev = .empty!
-} in list begin {
+dec Reverse : [type t] [List<t>] List<t>
+def Reverse = [type t] [list] do {
+  let rev : List<t> = .empty!
+} in list.begin.case {
   .empty! => rev,
   .item(head) tail => do {
-    let rev = .item(head) rev
-  } in tail loop
+    let rev : List<t> = .item(head) rev
+  } in tail.loop
   // tail corresponds to the self in the
   // .item(T) self
   // branch
@@ -202,6 +202,8 @@ def reverse = [type T] [list] do {
 ```
 This is a total `unfounded begin`-`loop`, as the totality checker currently doesn't recognize this loop as total.
 ```par
+
+TODO 
 dec reverse : [type T] [List<T>] List<T>
 def reverse = [type T] [list] list unfounded begin {
   .empty! => .empty!,
@@ -216,13 +218,15 @@ def reverse = [type T] [list] list unfounded begin {
 /// splits the list into two lists
 /// of equal length
 /// (the left list may be one longer)
-dec split : [type T] [List<T>] (List<T>, List<T>)!
+dec Split : [type t] [List<t>] (List<t>, List<t>)!
 
 /// concatenates two lists
-dec concat : [type T] [List<T>, List<T>] List<T>
+dec Concat : [type t] [List<t>, List<t>] List<t>
+
 ```
 This is a nontotal `unfounded begin`-`loop`. Caution is required when using these to not lose totality.
 ```par
+TODO
 def infinite_loop: ! = do {
   let list: List<!> = .item(!).empty!
 } in list unfounded begin {
@@ -246,19 +250,19 @@ def infinite_loop: ! = do {
 
 Having multiple types between `(` and `)` is just syntax sugar:
 ```par
-x(type T, U)
+x(type t, u)
 // is equivalent to
-x(type T)(type U)
+x(type t)(type u)
 ```
 
-If `x` is of the universal type `[type T] R`, the specialization `f(type X)` is of type `R`.
+If `x` is of the universal type `[type t] r`, the specialization `f(type x)` is of type `r`.
 
 These expressions often "instantiate generic functions"
 ```par
-def id = [type T] [x: T] x
+def Id = [type t] [x: t] x
 
-def id_bool: [Bool] Bool = id(type Bool)
-def id_unit: [!] ! = id(type !)
+def Id_bool: [Bool] Bool = Id(type Bool)
+def Id_unit: [!] ! = Id(type !)
 ```
 
 [ID]: ../lexical.md#names

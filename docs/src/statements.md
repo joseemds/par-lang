@@ -43,7 +43,7 @@ Let statements are used to create values in processes. They are the only constru
 
 In `do` expressions, they are used to bind the values used in the value after `in`:
 ```par
-let true_and_false = do {
+def TrueAndFalse = do {
   let x: Bool = .true!
   let y: Bool = .false!
 } in (x, y)!
@@ -51,14 +51,14 @@ let true_and_false = do {
 
 In `chan` expressions, they can be used to construct a value that is then linked with a value of dual type:
 ```par
-def just_true = chan return: chan Bool {
+def JustTrue = chan return: dual Bool {
   // constructing the return value
   let b: Bool = .true!
   // linking it
   return <> b
 }
 // is equivalent to
-def just_true = chan return: chan Bool {
+def JustTrue = chan return: dual Bool {
   // destructing the result
   return.true!
 }

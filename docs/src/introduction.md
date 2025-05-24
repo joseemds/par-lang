@@ -44,17 +44,17 @@ Putting all of this together, Par manages to be a functional language while also
 For example, a mutable stack can be implemented like this ([explanation](types.md#choice-types)):
 ```par
 ?type Bool = either { .true!, .false! }
-?type List<T> = recursive either { .empty!, .item(T) self }
-?type Option<T> = either { .none!, .some T }
+?type List<t> = recursive either { .empty!, .item(t) self }
+?type Option<t> = either { .none!, .some t }
 ?
-type Stack<Unwrap, T> = iterative {
-  .push(T) => self
-  .pop => (Option<T>) self
-  .unwrap => Unwrap
+type Stack<unwrap, t> = iterative choice {
+  .push(t) => self
+  .pop => (Option<t>) self
+  .unwrap => unwrap
 }
 
-dec list_stack : [type T] [List<T>] Stack<List<T>, T>
-def list_stack = [type T] [list] begin {
+dec ListStack : [type T] [List<T>] Stack<List<T>, T>
+def ListStack = [type T] [list] begin {
   .push(x) => let list: List<T> = .item(x) list in loop
   .pop => list {
     .empty! => (.none!) let list: List<T> = .empty! in loop,

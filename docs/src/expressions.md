@@ -147,29 +147,29 @@ Par even has an intermediate representation in which all expressions are channel
 
 A channel expression constructs a value by destructing a value of its dual. For example:
 ```par
-dec is_even : [Nat] Bool
-def is_even = chan return: (Nat) chan Bool {
+dec IsEven : [Nat] Bool
+def IsEven = chan return: (Nat) dual Bool {
   // destruct return in this process
 
   return[n]
-  // return is now of type chan Bool
+  // return is now of type dual Bool
   // and n is of type Nat
-
+  let n = Nat.Repeat(n)
   // destruct n
-  n begin {
-    .zero! => {
+  n.begin.case {
+    .end! => {
       // fully destruct return
       return.true!
     }
-    .succ => {
+    .step => {
       // n is now its former predecessor
-      n {
-        .zero! => {
+      n.case {
+        .end! => {
           // n was 1
           return.false!
         }
-        .succ => {
-          n loop
+        .step => {
+          n.loop
         }
       }
     }
@@ -180,17 +180,17 @@ Learn more about destructing values using commands [here](./statements/commands.
 
 A more elaborate example is reversing a list using the generator pattern:
 ```par
-dec reverse : [type T] [List<T>] List<T>
+dec Reverse : [type t] [List<t>] List<t>
 
 // We construct the reversed list by destructing its dual: `chan List<T>`.
-def reverse = [type T] [list] chan yield {
-  let yield: chan List<T> = list begin {
+def Reverse = [type t] [list] chan yield {
+  let yield: dual List<t> = list.begin.case {
     // The list is empty, give back the generator handle.
     .empty!       => yield,
     // The list starts with an item `x`.
     .item(x) rest => do {
       // Traverse into the rest of the list first.            
-      let yield = rest loop
+      let yield = rest.loop
       // After that, produce `x` on the reversed list.          
       yield.item(x)                  
     } in yield // Finally, give back the generator handle.
