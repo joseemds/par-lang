@@ -726,10 +726,10 @@ impl<Typ> Process<Typ> {
                     }
 
                     Command::Case(choices, branches) => {
-                        write!(f, " {{")?;
+                        write!(f, ".case {{")?;
                         for (choice, process) in choices.iter().zip(branches.iter()) {
                             indentation(f, indent + 1)?;
-                            write!(f, "{} => {{", choice)?;
+                            write!(f, ".{} => {{", choice)?;
                             process.pretty(f, indent + 2)?;
                             indentation(f, indent + 1)?;
                             write!(f, "}}")?;
@@ -750,40 +750,25 @@ impl<Typ> Process<Typ> {
                     Command::Begin {
                         unfounded,
                         label,
-                        captures,
                         body: process,
+                        ..
                     } => {
                         if *unfounded {
-                            write!(f, " unfounded")?;
+                            write!(f, ".unfounded")?;
+                        } else {
+                            write!(f, ".begin")?;
                         }
-                        write!(f, " begin")?;
                         if let Some(label) = label {
-                            write!(f, " {}", label)?;
+                            write!(f, "/{}", label)?;
                         }
-                        write!(f, " |")?;
-                        for (i, cap) in captures.names.keys().enumerate() {
-                            if i > 0 {
-                                write!(f, " ")?;
-                            }
-                            write!(f, "{}", cap)?;
-                        }
-                        write!(f, "| ")?;
                         process.pretty(f, indent)
                     }
 
-                    Command::Loop(label, captures) => {
-                        write!(f, " loop")?;
+                    Command::Loop(label, _) => {
+                        write!(f, ".loop")?;
                         if let Some(label) = label {
-                            write!(f, " {}", label)?;
+                            write!(f, "/{}", label)?;
                         }
-                        write!(f, " |")?;
-                        for (i, cap) in captures.names.keys().enumerate() {
-                            if i > 0 {
-                                write!(f, " ")?;
-                            }
-                            write!(f, "{}", cap)?;
-                        }
-                        write!(f, "|")?;
                         Ok(())
                     }
 
@@ -822,28 +807,18 @@ impl<Typ> Expression<Typ> {
             }
 
             Self::Fork {
-                captures,
                 chan_name: channel,
                 process,
                 ..
             } => {
-                write!(f, "chan {} |", channel)?;
-                for (i, cap) in captures.names.keys().enumerate() {
-                    if i > 0 {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{}", cap)?;
-                }
-                write!(f, "| {{")?;
+                write!(f, "chan {} {{", channel)?;
                 process.pretty(f, indent + 1)?;
                 indentation(f, indent)?;
                 write!(f, "}}")
             }
 
             Self::Primitive(_, value, _) => {
-                write!(f, "#{{")?;
-                value.pretty(f, indent)?;
-                write!(f, "}}")
+                value.pretty(f, indent)
             }
 
             Self::External(_, _, _) => {
