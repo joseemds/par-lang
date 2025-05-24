@@ -249,7 +249,7 @@ impl<Expr> Default for Module<Expr> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NameWithType(pub String, pub Type);
+pub struct NameWithType(pub Option<String>, pub Type);
 
 pub struct TypeOnHover {
     sorted_pairs: Vec<((Point, Point), NameWithType)>,
@@ -263,7 +263,7 @@ impl TypeOnHover {
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),
-                    NameWithType(format!("{}", name), declaration.typ.clone()),
+                    NameWithType(Some(format!("{}", name)), declaration.typ.clone()),
                 ));
             }
         }
@@ -272,12 +272,12 @@ impl TypeOnHover {
             if let Some((start, end)) = name.span.points() {
                 pairs.push((
                     (start, end),
-                    NameWithType(format!("{}", name), definition.expression.get_type()),
+                    NameWithType(Some(format!("{}", name)), definition.expression.get_type()),
                 ));
             }
             definition
                 .expression
-                .types_at_spans(&mut |span, name, typ| {
+                .types_at_spans(&program.type_defs, &mut |span, name, typ| {
                     if let Some((start, end)) = span.points() {
                         pairs.push(((start, end), NameWithType(name, typ)))
                     }

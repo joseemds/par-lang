@@ -5,6 +5,7 @@ use crate::par::program::NameWithType;
 use crate::playground::{Checked, Compiled};
 use lsp_types::{self as lsp, Uri};
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub enum CompileError {
@@ -41,7 +42,10 @@ impl Instance {
                     .type_on_hover
                     .query(pos.line as usize, pos.character as usize)
                 {
-                    let mut buf = format!("{}: ", name);
+                    let mut buf = String::new();
+                    if let Some(name) = name {
+                        write!(&mut buf, "{}: ", name).unwrap();
+                    }
                     typ.pretty(&mut buf, 0).unwrap();
                     lsp::MarkedString::LanguageString(lsp::LanguageString {
                         language: "par".to_owned(),

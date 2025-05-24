@@ -1,7 +1,7 @@
 use super::{
     language::{GlobalName, LocalName},
     primitive::Primitive,
-    types::Type,
+    types::{Type, TypeDefs},
 };
 use crate::{
     icombs::readback::Handle,
@@ -256,8 +256,12 @@ impl<Typ: Clone> Process<Typ> {
     }
 }
 
-impl<Typ: Clone> Process<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
+impl Process<Type> {
+    pub fn types_at_spans(
+        &self,
+        type_defs: &TypeDefs,
+        consume: &mut impl FnMut(Span, Option<String>, Type),
+    ) {
         match self {
             Process::Let {
                 name,
@@ -266,18 +270,29 @@ impl<Typ: Clone> Process<Typ> {
                 then,
                 ..
             } => {
-                value.types_at_spans(consume);
-                consume(name.span(), format!("{}", name), typ.clone());
-                then.types_at_spans(consume);
+                value.types_at_spans(type_defs, consume);
+                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                then.types_at_spans(type_defs, consume);
             }
             Process::Do {
-                name, typ, command, ..
+                span,
+                name,
+                typ,
+                command,
+                ..
             } => {
-                consume(name.span(), format!("{}", name), typ.clone());
-                command.types_at_spans(consume);
+                consume(name.span(), Some(format!("{}", name)), typ.clone());
+                if name == &LocalName::result() {
+                    consume(*span, None, typ.dual(type_defs).unwrap());
+                } else if name == &LocalName::object() {
+                    consume(*span, None, typ.clone());
+                } else {
+                    consume(*span, Some(format!("{}", name)), typ.clone());
+                }
+                command.types_at_spans(type_defs, consume);
             }
             Process::Telltypes(_, process) => {
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
         }
     }
@@ -365,41 +380,45 @@ impl<Typ: Clone> Command<Typ> {
     }
 }
 
-impl<Typ: Clone> Command<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
+impl Command<Type> {
+    pub fn types_at_spans(
+        &self,
+        type_defs: &TypeDefs,
+        consume: &mut impl FnMut(Span, Option<String>, Type),
+    ) {
         match self {
             Self::Link(expression) => {
-                expression.types_at_spans(consume);
+                expression.types_at_spans(type_defs, consume);
             }
             Self::Send(argument, process) => {
-                argument.types_at_spans(consume);
-                process.types_at_spans(consume);
+                argument.types_at_spans(type_defs, consume);
+                process.types_at_spans(type_defs, consume);
             }
             Self::Receive(param, _, param_type, process) => {
-                consume(param.span(), format!("{}", param), param_type.clone());
-                process.types_at_spans(consume);
+                consume(param.span(), Some(format!("{}", param)), param_type.clone());
+                process.types_at_spans(type_defs, consume);
             }
             Self::Signal(_, process) => {
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
             Self::Case(_, branches) => {
                 for process in branches {
-                    process.types_at_spans(consume);
+                    process.types_at_spans(type_defs, consume);
                 }
             }
             Self::Break => {}
             Self::Continue(process) => {
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
             Self::Begin { body, .. } => {
-                body.types_at_spans(consume);
+                body.types_at_spans(type_defs, consume);
             }
             Self::Loop(_, _) => {}
             Self::SendType(_, process) => {
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
             Self::ReceiveType(_, process) => {
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
         }
     }
@@ -489,14 +508,18 @@ impl<Typ: Clone> Expression<Typ> {
     }
 }
 
-impl<Typ: Clone> Expression<Typ> {
-    pub fn types_at_spans(&self, consume: &mut impl FnMut(Span, String, Typ)) {
+impl Expression<Type> {
+    pub fn types_at_spans(
+        &self,
+        type_defs: &TypeDefs,
+        consume: &mut impl FnMut(Span, Option<String>, Type),
+    ) {
         match self {
             Self::Global(_, name, typ) => {
-                consume(name.span(), format!("{}", name), typ.clone());
+                consume(name.span(), Some(format!("{}", name)), typ.clone());
             }
             Self::Variable(_, name, typ) => {
-                consume(name.span(), format!("{}", name), typ.clone());
+                consume(name.span(), Some(format!("{}", name)), typ.clone());
             }
             Self::Fork {
                 chan_name,
@@ -506,10 +529,10 @@ impl<Typ: Clone> Expression<Typ> {
             } => {
                 consume(
                     chan_name.span(),
-                    format!("{}", chan_name),
+                    Some(format!("{}", chan_name)),
                     chan_type.clone(),
                 );
-                process.types_at_spans(consume);
+                process.types_at_spans(type_defs, consume);
             }
             Self::Primitive(_, _, _) => {}
             Self::External(_, _, _) => {}
