@@ -14,7 +14,7 @@ def Flatten = [type a] [tree] chan yield {
     } in right.loop
   }
 
-  yield.empty!
+  yield.end!
 }
 
 def Main = Flatten(type Bool)(

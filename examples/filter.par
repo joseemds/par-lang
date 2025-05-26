@@ -5,9 +5,9 @@ type Func<a, b> = iterative choice {
 
 dec Filter : [Func<Nat, Bool>, List<Nat>] List<Nat>
 def Filter = [predicate, list] list.begin.case {
-  .empty! => do {
+  .end! => do {
     predicate.drop?
-  } in .empty!
+  } in .end!
 
   .item(value) rest => do {
     predicate.apply(value)[result]

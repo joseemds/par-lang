@@ -1,4 +1,4 @@
 type List<a> = recursive either {
-  .empty!,
+  .end!,
   .item(a) self,
 }

@@ -280,7 +280,10 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                 ),
                 Definition::external(
                     "Reader",
-                    Type::function(Type::string(), Type::name(None, "Reader", vec![])),
+                    Type::function(
+                        Type::string(),
+                        Type::name(None, "Reader", vec![Type::break_()]),
+                    ),
                     |handle| Box::pin(string_reader(handle)),
                 ),
             ],
@@ -423,7 +426,7 @@ async fn nat_range(mut handle: Handle) {
         handle.send().provide_nat(i.clone());
         i += 1;
     }
-    handle.signal(0, 2); // empty
+    handle.signal(0, 2); // end
     handle.break_();
 }
 
@@ -528,7 +531,7 @@ async fn int_range(mut handle: Handle) {
         handle.send().provide_int(i.clone());
         i += 1;
     }
-    handle.signal(0, 2); // empty
+    handle.signal(0, 2); // end
     handle.break_();
 }
 
@@ -687,7 +690,7 @@ async fn string_reader(mut handle: Handle) {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
-                    handle.signal(0, 3); // empty
+                    handle.signal(0, 3); // end
                     handle.break_();
                     return;
                 }
@@ -728,7 +731,7 @@ async fn string_reader(mut handle: Handle) {
                 let prefix = Pattern::readback(handle.receive()).await;
                 let suffix = Pattern::readback(handle.receive()).await;
                 if remainder.is_empty() {
-                    handle.signal(0, 3); // empty
+                    handle.signal(0, 3); // end
                     handle.break_();
                     return;
                 }
@@ -1246,7 +1249,7 @@ async fn handle_directory_info(path: Substr, mut dir: ReadDir, mut handle: Handl
                         }
                     });
                 }
-                handle.signal(0, 2); // empty
+                handle.signal(0, 2); // end
                 handle.break_();
                 return;
             }
@@ -1266,7 +1269,7 @@ where
     loop {
         match handle.case(2).await {
             0 => {
-                // empty
+                // end
                 handle.break_();
                 return items;
             }

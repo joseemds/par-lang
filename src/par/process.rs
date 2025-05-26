@@ -817,9 +817,7 @@ impl<Typ> Expression<Typ> {
                 write!(f, "}}")
             }
 
-            Self::Primitive(_, value, _) => {
-                value.pretty(f, indent)
-            }
+            Self::Primitive(_, value, _) => value.pretty(f, indent),
 
             Self::External(_, _, _) => {
                 write!(f, "<external>")

@@ -1996,7 +1996,7 @@ impl Context {
     pub fn infer_process(
         &mut self,
         process: &Process<()>,
-        subject: &LocalName,
+        inference_subject: &LocalName,
     ) -> Result<(Arc<Process<Type>>, Type), TypeError> {
         match process {
             Process::Let {
@@ -2009,13 +2009,13 @@ impl Context {
             } => {
                 let (expression, typ) = match annotation {
                     Some(annotated_type) => (
-                        self.check_expression(Some(subject), expression, annotated_type)?,
+                        self.check_expression(Some(inference_subject), expression, annotated_type)?,
                         annotated_type.clone(),
                     ),
-                    None => self.infer_expression(Some(subject), expression)?,
+                    None => self.infer_expression(Some(inference_subject), expression)?,
                 };
                 self.put(span, name.clone(), typ.clone())?;
-                let (process, subject_type) = self.infer_process(process, subject)?;
+                let (process, subject_type) = self.infer_process(process, inference_subject)?;
                 Ok((
                     Arc::new(Process::Let {
                         span: span.clone(),
@@ -2035,8 +2035,8 @@ impl Context {
                 typ: (),
                 command,
             } => {
-                if object == subject {
-                    let (command, typ) = self.infer_command(span, subject, command)?;
+                if object == inference_subject {
+                    let (command, typ) = self.infer_command(span, inference_subject, command)?;
                     return Ok((
                         Arc::new(Process::Do {
                             span: span.clone(),
@@ -2050,13 +2050,13 @@ impl Context {
                 let typ = self.get_variable_or_error(span, object)?;
 
                 let (command, inferred_type) = self.check_command(
-                    Some(subject),
+                    Some(inference_subject),
                     span,
                     object,
                     &typ,
                     command,
                     &mut |context, process| {
-                        let (process, typ) = context.infer_process(process, subject)?;
+                        let (process, typ) = context.infer_process(process, inference_subject)?;
                         Ok((process, Some(typ)))
                     },
                 )?;
@@ -2064,7 +2064,7 @@ impl Context {
                 let Some(inferred_type) = inferred_type else {
                     return Err(TypeError::TypeMustBeKnownAtThisPoint(
                         span.clone(),
-                        subject.clone(),
+                        inference_subject.clone(),
                     ));
                 };
 

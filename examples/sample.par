@@ -13,9 +13,9 @@ type Mapper<a, b> = iterative choice {
 dec MapList : [type a, b] [List<a>, Mapper<a, b>] List<b>
 def MapList = [type a, b] [list, mapper]
   list.begin.case {
-    .empty! => do {
+    .end! => do {
       mapper.close?
-    } in .empty!
+    } in .end!
 
     .item(x) xs => do {
       mapper.apply(x)[y]
@@ -40,7 +40,7 @@ def ListRGB =
   .item(.red!)
   .item(.green!)
   .item(.blue!)
-  .empty!
+  .end!
 
 dec RedForever : Seq<Color>
 def RedForever = begin case {
@@ -84,9 +84,9 @@ def BoolsForever =
 
 dec Zip : [type a, b] [List<a>, Seq<b>] List<(a, b)!>
 def Zip = [type a, b] [list, seq] list.begin.case {
-  .empty! => do {
+  .end! => do {
     seq.close?
-  } in .empty!
+  } in .end!
 
   .item(x) xs => do {
     seq.next[y]

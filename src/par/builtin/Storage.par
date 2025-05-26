@@ -11,7 +11,7 @@ type FileInfo = iterative choice {
   .close => !,
   .getPath => (Path) self,
   .getSize => (Nat.Nat) self,
-  .readUTF8 => String.Reader,
+  .readUTF8 => String.Reader<Error>,
 }
 
 type DirectoryInfo = recursive/tree iterative/inspect choice {
