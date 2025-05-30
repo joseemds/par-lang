@@ -593,7 +593,7 @@ impl ReadbackImplLevel {
                 res
             }
             Type::Self_(_, _) => Ok,
-            _ => unreachable!("Type not implemented: {typ:?}"),
+            _ => ReadbackImplLevel::Incomplete,
         }
     }
 
