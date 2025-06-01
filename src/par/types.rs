@@ -2565,7 +2565,7 @@ impl Type {
             }
 
             Self::Choice(_, branches) => {
-                write!(f, "{{")?;
+                write!(f, "choice {{")?;
                 for (branch, typ) in branches {
                     indentation(f, indent + 1)?;
                     write!(f, ".{} => ", branch)?;
@@ -2579,25 +2579,27 @@ impl Type {
             Self::Continue(_) => write!(f, "?"),
 
             Self::Recursive { label, body, .. } => {
-                write!(f, "recursive ")?;
+                write!(f, "recursive")?;
                 if let Some(label) = label {
-                    write!(f, ":{} ", label)?;
+                    write!(f, "/{}", label)?;
                 }
+                write!(f, " ")?;
                 body.pretty(f, indent)
             }
 
             Self::Iterative { label, body, .. } => {
-                write!(f, "iterative ")?;
+                write!(f, "iterative")?;
                 if let Some(label) = label {
-                    write!(f, ":{} ", label)?;
+                    write!(f, "/{}", label)?;
                 }
+                write!(f, " ")?;
                 body.pretty(f, indent)
             }
 
             Self::Self_(_, label) => {
                 write!(f, "self")?;
                 if let Some(label) = label {
-                    write!(f, " :{}", label)?;
+                    write!(f, "/{}", label)?;
                 }
                 Ok(())
             }
@@ -2702,36 +2704,38 @@ impl Type {
                     .map(|(branch, _)| format!(".{branch}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "{{ {branches} }}")
+                write!(f, "choice {{ {branches} }}")
             }
 
             Self::Break(_) => write!(f, "!"),
             Self::Continue(_) => write!(f, "?"),
 
             Self::Recursive { label, body, .. } => {
-                write!(f, "recursive ")?;
+                write!(f, "recursive")?;
                 if !matches!(body.as_ref(), Self::Either(..)) {
                     if let Some(label) = label {
-                        write!(f, ":{} ", label)?;
+                        write!(f, "/{}", label)?;
                     }
                 }
+                write!(f, " ")?;
                 body.pretty_compact(f)
             }
 
             Self::Iterative { label, body, .. } => {
-                write!(f, "iterative ")?;
+                write!(f, "iterative")?;
                 if !matches!(body.as_ref(), Self::Choice(..)) {
                     if let Some(label) = label {
-                        write!(f, ":{} ", label)?;
+                        write!(f, "/{}", label)?;
                     }
                 }
+                write!(f, " ")?;
                 body.pretty_compact(f)
             }
 
             Self::Self_(_, label) => {
                 write!(f, "self")?;
                 if let Some(label) = label {
-                    write!(f, " :{}", label)?;
+                    write!(f, "/{}", label)?;
                 }
                 Ok(())
             }
