@@ -707,7 +707,6 @@ impl Compiler {
                 ..
             } => {
                 let label = LoopLabel(label.clone());
-                self.context.vars.sort_keys();
 
                 let (def0, def1) = self.net.create_wire();
                 let prev = self.context.vars.insert(
@@ -717,6 +716,8 @@ impl Compiler {
                         VariableKind::Replicable,
                     ),
                 );
+                self.context.vars.sort_keys();
+
                 if let Some((prev_tree, _)) = prev {
                     self.net.link(prev_tree.tree, Tree::Era);
                 }
