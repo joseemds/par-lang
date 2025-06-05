@@ -311,7 +311,9 @@ impl TypeDefs {
                         args.len(),
                     ));
                 }
-                Ok(typ.clone().substitute(params.iter().zip(args).collect())?)
+                Ok(typ
+                    .dual(self)?
+                    .substitute(params.iter().zip(args).collect())?)
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
