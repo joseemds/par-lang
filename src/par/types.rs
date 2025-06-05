@@ -289,11 +289,7 @@ impl TypeDefs {
                         args.len(),
                     ));
                 }
-                let mut typ = typ.clone();
-                for i in 0..params.len() {
-                    typ = typ.substitute(&params[i], &args[i])?;
-                }
-                Ok(typ)
+                Ok(typ.clone().substitute(params.iter().zip(args).collect())?)
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -315,11 +311,7 @@ impl TypeDefs {
                         args.len(),
                     ));
                 }
-                let mut typ = typ.dual(self)?;
-                for i in 0..params.len() {
-                    typ = typ.substitute(&params[i], &args[i])?;
-                }
-                Ok(typ)
+                Ok(typ.clone().substitute(params.iter().zip(args).collect())?)
             }
             None => Err(TypeError::TypeNameNotDefined(span.clone(), name.clone())),
         }
@@ -420,12 +412,12 @@ impl Spanning for Type {
 }
 
 impl Type {
-    pub fn substitute(self, var: &LocalName, typ: &Self) -> Result<Self, TypeError> {
+    pub fn substitute(self, map: BTreeMap<&LocalName, &Type>) -> Result<Self, TypeError> {
         Ok(match self {
             Self::Primitive(span, p) => Self::Primitive(span, p),
-            Self::Dual(span, t) => Self::Dual(span, Box::new(t.substitute(var, typ)?)),
+            Self::Dual(span, t) => Self::Dual(span, Box::new(t.substitute(map)?)),
             Self::Var(span, name) => {
-                if &name == var {
+                if let Some(&typ) = map.get(&name) {
                     typ.clone()
                 } else {
                     Self::Var(span, name)
@@ -435,31 +427,31 @@ impl Type {
                 span,
                 name,
                 args.into_iter()
-                    .map(|arg| arg.substitute(var, typ))
+                    .map(|arg| arg.substitute(map.clone()))
                     .collect::<Result<_, _>>()?,
             ),
             Self::Pair(loc, t, u) => Self::Pair(
                 loc,
-                Box::new(t.substitute(var, typ)?),
-                Box::new(u.substitute(var, typ)?),
+                Box::new(t.substitute(map.clone())?),
+                Box::new(u.substitute(map)?),
             ),
             Self::Function(loc, t, u) => Self::Function(
                 loc,
-                Box::new(t.substitute(var, typ)?),
-                Box::new(u.substitute(var, typ)?),
+                Box::new(t.substitute(map.clone())?),
+                Box::new(u.substitute(map)?),
             ),
             Self::Either(span, branches) => Self::Either(
                 span,
                 branches
                     .into_iter()
-                    .map(|(branch, branch_type)| Ok((branch, branch_type.substitute(var, typ)?)))
+                    .map(|(branch, branch_type)| Ok((branch, branch_type.substitute(map.clone())?)))
                     .collect::<Result<_, _>>()?,
             ),
             Self::Choice(span, branches) => Self::Choice(
                 span,
                 branches
                     .into_iter()
-                    .map(|(branch, branch_type)| Ok((branch, branch_type.substitute(var, typ)?)))
+                    .map(|(branch, branch_type)| Ok((branch, branch_type.substitute(map.clone())?)))
                     .collect::<Result<_, _>>()?,
             ),
             Self::Break(span) => Self::Break(span),
@@ -474,7 +466,7 @@ impl Type {
                 span,
                 asc,
                 label,
-                body: Box::new(body.substitute(var, typ)?),
+                body: Box::new(body.substitute(map)?),
             },
             Self::Iterative {
                 span,
@@ -485,23 +477,35 @@ impl Type {
                 span,
                 asc,
                 label,
-                body: Box::new(body.substitute(var, typ)?),
+                body: Box::new(body.substitute(map)?),
             },
             Self::Self_(span, label) => Self::Self_(span, label),
 
-            Self::Exists(loc, name, body) => {
-                if &name == var {
-                    Self::Exists(loc, name, body)
-                } else {
-                    Self::Exists(loc, name, Box::new(body.substitute(var, typ)?))
+            Self::Exists(loc, mut name, mut body) => {
+                while map.values().any(|t| t.contains_var(&name)) {
+                    let old_name = name.clone();
+                    name.string += "'";
+                    body = Box::new(body.substitute(BTreeMap::from([(
+                        &old_name,
+                        &Type::Var(name.span(), name.clone()),
+                    )]))?);
                 }
+                let mut map = map;
+                map.remove(&name);
+                Self::Exists(loc, name, Box::new(body.substitute(map)?))
             }
-            Self::Forall(loc, name, body) => {
-                if &name == var {
-                    Self::Forall(loc, name, body)
-                } else {
-                    Self::Forall(loc, name, Box::new(body.substitute(var, typ)?))
+            Self::Forall(loc, mut name, mut body) => {
+                while map.values().any(|t| t.contains_var(&name)) {
+                    let old_name = name.clone();
+                    name.string += "'";
+                    body = Box::new(body.substitute(BTreeMap::from([(
+                        &old_name,
+                        &Type::Var(name.span(), name.clone()),
+                    )]))?);
                 }
+                let mut map = map;
+                map.remove(&name);
+                Self::Forall(loc, name, Box::new(body.substitute(map)?))
             }
         })
     }
@@ -536,11 +540,17 @@ impl Type {
             Self::Self_(_, _) => true,
             Self::Exists(loc, name, t) => t
                 .clone()
-                .substitute(name, &Type::Var(loc.clone(), name.clone()))?
+                .substitute(BTreeMap::from([(
+                    name,
+                    &Type::Var(loc.clone(), name.clone()),
+                )]))?
                 .is_positive(type_defs)?,
             Self::Forall(loc, name, t) => t
                 .clone()
-                .substitute(name, &Type::Var(loc.clone(), name.clone()))?
+                .substitute(BTreeMap::from([(
+                    name,
+                    &Type::Var(loc.clone(), name.clone()),
+                )]))?
                 .is_positive(type_defs)?,
         })
     }
@@ -571,11 +581,17 @@ impl Type {
             Self::Self_(_, _) => true,
             Self::Exists(loc, name, t) => t
                 .clone()
-                .substitute(name, &Type::Var(loc.clone(), name.clone()))?
+                .substitute(BTreeMap::from([(
+                    name,
+                    &Type::Var(loc.clone(), name.clone()),
+                )]))?
                 .is_negative(type_defs)?,
             Self::Forall(loc, name, t) => t
                 .clone()
-                .substitute(name, &Type::Var(loc.clone(), name.clone()))?
+                .substitute(BTreeMap::from([(
+                    name,
+                    &Type::Var(loc.clone(), name.clone()),
+                )]))?
                 .is_negative(type_defs)?,
         })
     }
@@ -737,9 +753,10 @@ impl Type {
 
             (Self::Exists(loc, name1, body1), Self::Exists(_, name2, body2))
             | (Self::Forall(loc, name1, body1), Self::Forall(_, name2, body2)) => {
-                let body2 = body2
-                    .clone()
-                    .substitute(name2, &Type::Var(loc.clone(), name1.clone()))?;
+                let body2 = body2.clone().substitute(BTreeMap::from([(
+                    name2,
+                    &Type::Var(loc.clone(), name1.clone()),
+                )]))?;
                 let mut type_defs = type_defs.clone();
                 type_defs.vars.insert(name1.clone());
                 body1.is_assignable_to(&body2, &type_defs, ind)?
@@ -1349,6 +1366,30 @@ impl Type {
             Self::Forall(_, _, body) => body.contains_self(label),
 
             Self::Dual(_, t) => t.contains_self(label),
+        }
+    }
+
+    fn contains_var(&self, var: &LocalName) -> bool {
+        match self {
+            Self::Primitive(_, _) => false,
+            Self::Var(_, name) => name == var,
+            Self::Name(_, _, args) => args.iter().any(|arg| arg.contains_var(var)),
+
+            Self::Pair(_, t, u) => t.contains_var(var) || u.contains_var(var),
+            Self::Function(_, t, u) => t.contains_var(var) || u.contains_var(var),
+            Self::Either(_, branches) => branches.iter().any(|(_, typ)| typ.contains_var(var)),
+            Self::Choice(_, branches) => branches.iter().any(|(_, typ)| typ.contains_var(var)),
+            Self::Break(_) => false,
+            Self::Continue(_) => false,
+
+            Self::Recursive { body, .. } => body.contains_var(var),
+            Self::Iterative { body, .. } => body.contains_var(var),
+            Self::Self_(_, _) => false,
+
+            Self::Exists(_, name, body) => name != var && body.contains_var(var),
+            Self::Forall(_, name, body) => name != var && body.contains_var(var),
+
+            Self::Dual(_, t) => t.contains_var(var),
         }
     }
 }
@@ -1965,7 +2006,9 @@ impl Context {
                         typ.clone(),
                     ));
                 };
-                let then_type = then_type.clone().substitute(type_name, argument)?;
+                let then_type = then_type
+                    .clone()
+                    .substitute(BTreeMap::from([(type_name, argument)]))?;
                 self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;
                 (Command::SendType(argument.clone(), process), inferred_types)
@@ -1979,9 +2022,10 @@ impl Context {
                         typ.clone(),
                     ));
                 };
-                let then_type = then_type
-                    .clone()
-                    .substitute(type_name, &Type::Var(span.clone(), parameter.clone()))?;
+                let then_type = then_type.clone().substitute(BTreeMap::from([(
+                    type_name,
+                    &Type::Var(span.clone(), parameter.clone()),
+                )]))?;
                 self.type_defs.vars.insert(parameter.clone());
                 self.put(span, object.clone(), then_type)?;
                 let (process, inferred_types) = analyze_process(self, process)?;

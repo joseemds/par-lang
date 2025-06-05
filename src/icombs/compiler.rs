@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::{Debug, Display},
     sync::Arc,
 };
@@ -575,7 +576,9 @@ impl Compiler {
                 else {
                     panic!("Unexpected type for SendType: {:?}", subject.ty);
                 };
-                let ret_type = ret_type.substitute(&type_name, argument).unwrap();
+                let ret_type = ret_type
+                    .substitute(BTreeMap::from([(&type_name, argument)]))
+                    .unwrap();
                 self.bind_variable(name, subject.tree.with_type(ret_type))?;
                 self.compile_process(process)?;
             }
@@ -587,7 +590,10 @@ impl Compiler {
                 };
                 let ret_type = ret_type
                     .clone()
-                    .substitute(&type_name, &Type::Var(span.clone(), parameter.clone()))
+                    .substitute(BTreeMap::from([(
+                        &type_name,
+                        &Type::Var(span.clone(), parameter.clone()),
+                    )]))
                     .unwrap();
                 let was_empty_before = self.type_defs.vars.insert(parameter.clone());
                 self.bind_variable(name, subject.tree.with_type(ret_type))?;
