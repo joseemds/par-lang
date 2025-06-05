@@ -88,14 +88,14 @@ impl<'c> LanguageServer<'c> {
                     |instance| instance.handle_goto_definition(&params),
                 )
             }
-            SemanticTokensFullRequest::METHOD => {
+            /*SemanticTokensFullRequest::METHOD => {
                 let params = extract_request::<SemanticTokensFullRequest>(request);
                 self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
                     instance.provide_semantic_tokens(&params)
                 })
             }
             // don't really work yet
-            /*CodeLensRequest::METHOD => {
+            CodeLensRequest::METHOD => {
                 let params = extract_request::<CodeLensRequest>(request);
                 self.handle_request_instance(request_id, &params.text_document.uri, |instance| {
                     instance.provide_code_lens(&params)

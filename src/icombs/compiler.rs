@@ -131,6 +131,7 @@ pub struct PackData {
 impl Context {
     pub fn pack(
         &mut self,
+        driver: Option<&LocalName>,
         captures: Option<&Captures>,
         labels_in_scope: Option<&Vec<LoopLabel>>,
         net: &mut Net,
@@ -142,7 +143,7 @@ impl Context {
         for (name, (tree, kind)) in core::mem::take(&mut self.vars) {
             if let Some(captures) = captures {
                 if let Var::Name(name) = &name {
-                    if !captures.names.contains_key(name) {
+                    if !captures.names.contains_key(name) && Some(name) != driver {
                         net.link(tree.tree, Tree::Era);
                         continue;
                     }
@@ -661,7 +662,7 @@ impl Compiler {
                 self.context.unguarded_loop_labels.clear();
                 let old_tree = self.use_variable(&name, true)?.0;
                 // Multiplex all other variables in the context.
-                let (context_in, pack_data) = self.context.pack(None, None, &mut self.net);
+                let (context_in, pack_data) = self.context.pack(None, None, None, &mut self.net);
 
                 let mut branches = vec![];
                 let Type::Either(_, required_branches) = self.normalize_type(ty.clone()) else {
@@ -738,7 +739,8 @@ impl Compiler {
                 self.context.unguarded_loop_labels.push(label.clone());
 
                 let (context_in, pack_data) =
-                    self.context.pack(Some(captures), None, &mut self.net);
+                    self.context
+                        .pack(Some(&name), Some(captures), None, &mut self.net);
                 let (id, _) = self.in_package(
                     |this, _| {
                         let context_out = this.context.unpack(&pack_data, &mut this.net);
@@ -750,17 +752,22 @@ impl Compiler {
                 self.net.link(def1, Tree::Package(id));
                 self.net.link(context_in, Tree::Package(id));
             }
-            Command::Loop(label, captures) => {
+            Command::Loop(label, driver, captures) => {
                 let label = LoopLabel(label.clone());
                 if self.context.unguarded_loop_labels.contains(&label) {
                     return Err(Error::UnguardedLoop(span.clone(), label.clone().0));
                 }
                 let (tree, _) = self.use_var(&Var::Loop(label.0.clone()), false)?;
-                let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();
+                let driver_tree = self.use_variable(&name, true)?.0;
+                self.bind_variable(driver.clone(), driver_tree)?;
                 self.context.vars.sort_keys();
-                let (context_in, _) =
-                    self.context
-                        .pack(Some(captures), Some(&labels_in_scope), &mut self.net);
+                let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();
+                let (context_in, _) = self.context.pack(
+                    Some(driver),
+                    Some(captures),
+                    Some(&labels_in_scope),
+                    &mut self.net,
+                );
                 self.lazy_redexes.push((tree.tree, context_in));
             }
         };

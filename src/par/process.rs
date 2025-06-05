@@ -49,7 +49,7 @@ pub enum Command<Typ> {
         captures: Captures,
         body: Arc<Process<Typ>>,
     },
-    Loop(Option<LocalName>, Captures),
+    Loop(Option<LocalName>, LocalName, Captures),
     SendType(Type, Arc<Process<Typ>>),
     ReceiveType(LocalName, Arc<Process<Typ>>),
 }
@@ -119,7 +119,7 @@ impl Captures {
 impl<Typ: Clone> Process<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<LocalName>, Captures>,
+        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Let {
@@ -152,7 +152,7 @@ impl<Typ: Clone> Process<Typ> {
                 typ,
                 command,
             } => {
-                let (command, mut caps) = command.fix_captures(loop_points);
+                let (command, mut caps) = command.fix_captures(name, loop_points);
                 caps.add(name.clone(), loc.clone());
                 (
                     Arc::new(Self::Do {
@@ -238,8 +238,8 @@ impl<Typ: Clone> Process<Typ> {
                         captures: captures.clone(),
                         body: process.optimize(),
                     },
-                    Command::Loop(label, captures) => {
-                        Command::Loop(label.clone(), captures.clone())
+                    Command::Loop(label, driver, captures) => {
+                        Command::Loop(label.clone(), driver.clone(), captures.clone())
                     }
                     Command::SendType(argument, process) => {
                         Command::SendType(argument.clone(), process.optimize())
@@ -301,7 +301,8 @@ impl Process<Type> {
 impl<Typ: Clone> Command<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<LocalName>, Captures>,
+        subject: &LocalName,
+        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
     ) -> (Self, Captures) {
         match self {
             Self::Link(expression) => {
@@ -350,9 +351,10 @@ impl<Typ: Clone> Command<Typ> {
                 captures: _,
                 body: process,
             } => {
-                let (_, loop_caps) = process.fix_captures(loop_points);
+                let (_, mut loop_caps) = process.fix_captures(loop_points);
+                loop_caps.remove(subject);
                 let mut loop_points = loop_points.clone();
-                loop_points.insert(label.clone(), loop_caps.clone());
+                loop_points.insert(label.clone(), (subject.clone(), loop_caps.clone()));
                 let (process, caps) = process.fix_captures(&loop_points);
                 (
                     Self::Begin {
@@ -364,9 +366,15 @@ impl<Typ: Clone> Command<Typ> {
                     caps,
                 )
             }
-            Self::Loop(label, _) => {
-                let loop_caps = loop_points.get(label).cloned().unwrap_or_default();
-                (Self::Loop(label.clone(), loop_caps.clone()), loop_caps)
+            Self::Loop(label, _, _) => {
+                let (driver, loop_caps) = loop_points
+                    .get(label)
+                    .cloned()
+                    .unwrap_or((LocalName::invalid(), Captures::default()));
+                (
+                    Self::Loop(label.clone(), driver, loop_caps.clone()),
+                    loop_caps,
+                )
             }
             Self::SendType(argument, process) => {
                 let (process, caps) = process.fix_captures(loop_points);
@@ -413,7 +421,7 @@ impl Command<Type> {
             Self::Begin { body, .. } => {
                 body.types_at_spans(type_defs, consume);
             }
-            Self::Loop(_, _) => {}
+            Self::Loop(_, _, _) => {}
             Self::SendType(_, process) => {
                 process.types_at_spans(type_defs, consume);
             }
@@ -427,7 +435,7 @@ impl Command<Type> {
 impl<Typ: Clone> Expression<Typ> {
     pub fn fix_captures(
         &self,
-        loop_points: &IndexMap<Option<LocalName>, Captures>,
+        loop_points: &IndexMap<Option<LocalName>, (LocalName, Captures)>,
     ) -> (Arc<Self>, Captures) {
         match self {
             Self::Global(loc, name, typ) => (
@@ -625,7 +633,7 @@ impl Command<()> {
             Self::Begin { body, .. } => {
                 *body = body.clone().qualify(module);
             }
-            Self::Loop(_, _) => {}
+            Self::Loop(_, _, _) => {}
             Self::SendType(argument, process) => {
                 argument.qualify(module);
                 *process = process.clone().qualify(module);
@@ -764,11 +772,16 @@ impl<Typ> Process<Typ> {
                         process.pretty(f, indent)
                     }
 
-                    Command::Loop(label, _) => {
+                    Command::Loop(label, driver, caps) => {
                         write!(f, ".loop")?;
                         if let Some(label) = label {
-                            write!(f, "/{}", label)?;
+                            write!(f, "/{} ", label)?;
                         }
+                        write!(f, "{{{} |", driver)?;
+                        for var in caps.names.keys() {
+                            write!(f, " {}", var)?;
+                        }
+                        write!(f, "}}")?;
                         Ok(())
                     }
 

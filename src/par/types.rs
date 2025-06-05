@@ -1404,7 +1404,7 @@ pub struct Context {
     checked_definitions: Arc<RwLock<IndexMap<GlobalName, CheckedDef>>>,
     current_deps: IndexSet<GlobalName>,
     variables: IndexMap<LocalName, Type>,
-    loop_points: IndexMap<Option<LocalName>, (LocalName, Arc<IndexMap<LocalName, Type>>)>,
+    loop_points: IndexMap<Option<LocalName>, (Type, Arc<IndexMap<LocalName, Type>>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -1671,7 +1671,7 @@ impl Context {
                 );
             }
         }
-        if !matches!(command, Command::Begin { .. } | Command::Loop(_, _)) {
+        if !matches!(command, Command::Begin { .. } | Command::Loop(_, _, _)) {
             if let Type::Recursive {
                 asc: top_asc,
                 label: top_label,
@@ -1885,25 +1885,19 @@ impl Context {
                 self.loop_points.insert(
                     label.clone(),
                     (
-                        object.clone(),
-                        Arc::new({
-                            let mut variables = self
-                                .variables
+                        Type::Recursive {
+                            span: typ_span.clone(),
+                            asc: typ_asc.clone(),
+                            label: typ_label.clone(),
+                            body: typ_body.clone(),
+                        },
+                        Arc::new(
+                            self.variables
                                 .iter()
                                 .filter(|&(name, _)| captures.names.contains_key(name))
                                 .map(|(name, typ)| (name.clone(), typ.clone()))
-                                .collect::<IndexMap<_, _>>();
-                            variables.insert(
-                                object.clone(),
-                                Type::Recursive {
-                                    span: typ_span.clone(),
-                                    asc: typ_asc.clone(),
-                                    label: typ_label.clone(),
-                                    body: typ_body.clone(),
-                                },
-                            );
-                            variables
-                        }),
+                                .collect::<IndexMap<_, _>>(),
+                        ),
                     ),
                 );
 
@@ -1938,7 +1932,7 @@ impl Context {
                 )
             }
 
-            Command::Loop(label, captures) => {
+            Command::Loop(label, driver, captures) => {
                 if !matches!(typ, Type::Recursive { .. }) {
                     return Err(TypeError::InvalidOperation(
                         span.clone(),
@@ -1946,15 +1940,13 @@ impl Context {
                         typ.clone(),
                     ));
                 }
-                let Some((driver, variables)) = self.loop_points.get(label).cloned() else {
+                let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
                     return Err(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
                 };
                 self.put(span, driver.clone(), typ.clone())?;
 
-                if let (
-                    Type::Recursive { asc: asc1, .. },
-                    Some(Type::Recursive { asc: asc2, .. }),
-                ) = (typ, variables.get(&driver))
+                if let (Type::Recursive { asc: asc1, .. }, Type::Recursive { asc: asc2, .. }) =
+                    (typ, &driver_type)
                 {
                     for label in asc2 {
                         if !asc1.contains(label) {
@@ -1968,7 +1960,7 @@ impl Context {
 
                 let mut inferred_loop = None;
 
-                for (var, type_at_begin) in variables.as_ref() {
+                for (var, type_at_begin) in variables.iter().chain([(driver, &driver_type)]) {
                     if Some(var) == inference_subject {
                         inferred_loop = Some(type_at_begin.clone());
                         continue;
@@ -1995,7 +1987,7 @@ impl Context {
                 self.cannot_have_obligations(span)?;
 
                 (
-                    Command::Loop(label.clone(), captures.clone()),
+                    Command::Loop(label.clone(), driver.clone(), captures.clone()),
                     inferred_loop.or(Some(Type::Self_(span.clone(), label.clone()))),
                 )
             }
@@ -2212,47 +2204,17 @@ impl Context {
                 (Command::Continue(process), Type::Break(span.clone()))
             }
 
-            Command::Begin {
-                unfounded,
-                label,
-                captures,
-                body: process,
-            } => {
-                self.loop_points.insert(
-                    label.clone(),
-                    (subject.clone(), Arc::new(self.variables.clone())),
-                );
-                let (process, body) = self.infer_process(process, subject)?;
-                (
-                    Command::Begin {
-                        unfounded: *unfounded,
-                        label: label.clone(),
-                        captures: captures.clone(),
-                        body: process,
-                    },
-                    Type::Recursive {
-                        span: span.clone(),
-                        asc: if *unfounded {
-                            IndexSet::new()
-                        } else {
-                            IndexSet::from([label.clone()])
-                        },
-                        label: label.clone(),
-                        body: Box::new(body),
-                    },
-                )
+            Command::Begin { .. } => {
+                return Err(TypeError::TypeMustBeKnownAtThisPoint(
+                    span.clone(),
+                    subject.clone(),
+                ));
             }
 
-            Command::Loop(label, captures) => {
-                let Some((driver, variables)) = self.loop_points.get(label).cloned() else {
+            Command::Loop(label, driver, captures) => {
+                let Some((driver_type, variables)) = self.loop_points.get(label).cloned() else {
                     return Err(TypeError::NoSuchLoopPoint(span.clone(), label.clone()));
                 };
-                if &driver != subject {
-                    return Err(TypeError::TypeMustBeKnownAtThisPoint(
-                        span.clone(),
-                        subject.clone(),
-                    ));
-                }
 
                 for (var, type_at_begin) in variables.as_ref() {
                     let Some(current_type) = self.get_variable(var) else {
@@ -2277,8 +2239,8 @@ impl Context {
                 self.cannot_have_obligations(span)?;
 
                 (
-                    Command::Loop(label.clone(), captures.clone()),
-                    Type::Self_(span.clone(), label.clone()),
+                    Command::Loop(label.clone(), driver.clone(), captures.clone()),
+                    driver_type,
                 )
             }
 

@@ -65,6 +65,13 @@ impl LocalName {
             string: format!("#match{}", level),
         }
     }
+
+    pub fn invalid() -> Self {
+        Self {
+            span: Default::default(),
+            string: String::from("#invalid"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -732,7 +739,11 @@ impl Construct {
                 span: span.clone(),
                 name: LocalName::result(),
                 typ: (),
-                command: process::Command::Loop(label.clone(), Captures::new()),
+                command: process::Command::Loop(
+                    label.clone(),
+                    LocalName::invalid(),
+                    Captures::new(),
+                ),
             }),
 
             Self::SendType(span, argument, construct) => {
@@ -893,7 +904,11 @@ impl Apply {
                 span: span.clone(),
                 name: LocalName::object(),
                 typ: (),
-                command: process::Command::Loop(label.clone(), Captures::new()),
+                command: process::Command::Loop(
+                    label.clone(),
+                    LocalName::invalid(),
+                    Captures::new(),
+                ),
             }),
 
             Self::SendType(span, argument, apply) => {
@@ -1151,7 +1166,11 @@ impl Command {
                 span: span.clone(),
                 name: object_name.clone(),
                 typ: (),
-                command: process::Command::Loop(label.clone(), Captures::new()),
+                command: process::Command::Loop(
+                    label.clone(),
+                    LocalName::invalid(),
+                    Captures::new(),
+                ),
             }),
 
             Self::SendType(span, argument, command) => {
