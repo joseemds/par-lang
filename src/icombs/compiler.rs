@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Display},
     sync::Arc,
 };
@@ -115,8 +115,8 @@ pub struct LoopLabel(Option<LocalName>);
 
 #[derive(Debug)]
 pub struct Context {
-    vars: IndexMap<Var, (TypedTree, VariableKind)>,
-    loop_points: IndexMap<LoopLabel, Vec<LoopLabel>>,
+    vars: BTreeMap<Var, (TypedTree, VariableKind)>,
+    loop_points: BTreeMap<LoopLabel, BTreeSet<LoopLabel>>,
     unguarded_loop_labels: Vec<LoopLabel>,
 }
 
@@ -124,7 +124,7 @@ pub struct PackData {
     names: Vec<Var>,
     types: Vec<Type>,
     kinds: Vec<VariableKind>,
-    loop_points: IndexMap<LoopLabel, Vec<LoopLabel>>,
+    loop_points: BTreeMap<LoopLabel, BTreeSet<LoopLabel>>,
     unguarded_loop_labels: Vec<LoopLabel>,
 }
 
@@ -133,7 +133,7 @@ impl Context {
         &mut self,
         driver: Option<&LocalName>,
         captures: Option<&Captures>,
-        labels_in_scope: Option<&Vec<LoopLabel>>,
+        labels_in_scope: Option<&BTreeSet<LoopLabel>>,
         net: &mut Net,
     ) -> (Tree, PackData) {
         let mut m_trees = vec![];
@@ -365,7 +365,7 @@ impl Compiler {
         captures: &Captures,
         f: impl FnOnce(&mut Self) -> Result<T>,
     ) -> Result<T> {
-        let mut vars = IndexMap::new();
+        let mut vars = BTreeMap::new();
         for (name, _) in captures.names.iter() {
             let (tree, kind) = self.use_variable(name, false)?;
             vars.insert(Var::Name(name.clone()), (tree, kind));
@@ -398,7 +398,7 @@ impl Compiler {
     }
 
     fn use_var(&mut self, var: &Var, in_command: bool) -> Result<(TypedTree, VariableKind)> {
-        if let Some((tree, kind)) = self.context.vars.swap_remove(var) {
+        if let Some((tree, kind)) = self.context.vars.remove(var) {
             if in_command {
                 return Ok((tree, kind));
             }
@@ -723,15 +723,14 @@ impl Compiler {
                         VariableKind::Replicable,
                     ),
                 );
-                self.context.vars.sort_keys();
 
                 if let Some((prev_tree, _)) = prev {
                     self.net.link(prev_tree.tree, Tree::Era);
                 }
 
-                let mut labels_in_scope: Vec<_> =
+                let mut labels_in_scope: BTreeSet<_> =
                     self.context.loop_points.keys().cloned().collect();
-                labels_in_scope.push(label.clone());
+                labels_in_scope.insert(label.clone());
                 self.context
                     .loop_points
                     .insert(label.clone(), labels_in_scope);
@@ -760,7 +759,6 @@ impl Compiler {
                 let (tree, _) = self.use_var(&Var::Loop(label.0.clone()), false)?;
                 let driver_tree = self.use_variable(&name, true)?.0;
                 self.bind_variable(driver.clone(), driver_tree)?;
-                self.context.vars.sort_keys();
                 let labels_in_scope = self.context.loop_points.get(&label).unwrap().clone();
                 let (context_in, _) = self.context.pack(
                     Some(driver),
@@ -792,8 +790,8 @@ pub fn compile_file(program: &CheckedModule) -> Result<IcCompiled> {
     let mut compiler = Compiler {
         net: Net::default(),
         context: Context {
-            vars: IndexMap::default(),
-            loop_points: IndexMap::default(),
+            vars: BTreeMap::default(),
+            loop_points: BTreeMap::default(),
             unguarded_loop_labels: Default::default(),
         },
         type_defs: program.type_defs.clone(),
