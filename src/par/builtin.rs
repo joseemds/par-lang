@@ -271,12 +271,9 @@ pub fn import_builtins(module: &mut Module<Arc<process::Expression<()>>>) {
                     Box::pin(string_builder(handle))
                 }),
                 Definition::external(
-                    "SplitAt",
-                    Type::function(
-                        Type::string(),
-                        Type::function(Type::int(), Type::pair(Type::string(), Type::string())),
-                    ),
-                    |handle| Box::pin(string_split_at(handle)),
+                    "Quote",
+                    Type::function(Type::string(), Type::string()),
+                    |handle| Box::pin(string_quote(handle)),
                 ),
                 Definition::external(
                     "Reader",
@@ -650,29 +647,9 @@ async fn string_builder(mut handle: Handle) {
     }
 }
 
-async fn string_split_at(mut handle: Handle) {
-    let string = handle.receive().string().await;
-    let char_index = handle.receive().int().await;
-
-    if char_index <= BigInt::ZERO {
-        handle.send().provide_string(Substr::from(""));
-        handle.provide_string(string);
-        return;
-    }
-    if char_index > BigInt::from(u32::MAX) {
-        handle.send().provide_string(string);
-        handle.provide_string(Substr::from(""));
-        return;
-    }
-
-    let char_index = char_index.iter_u32_digits().next().unwrap() as usize;
-    let (left, right) = match string.as_str().char_indices().skip(char_index).next() {
-        Some((byte_index, _)) => (string.substr(..byte_index), string.substr(byte_index..)),
-        None => (string, Substr::from("")),
-    };
-
-    handle.send().provide_string(left);
-    handle.provide_string(right);
+async fn string_quote(mut handle: Handle) {
+    let s = handle.receive().string().await;
+    handle.provide_string(Substr::from(format!("{:?}", s)));
 }
 
 async fn string_reader(mut handle: Handle) {
