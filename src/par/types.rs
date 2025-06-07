@@ -734,7 +734,7 @@ impl Type {
                     ..
                 },
             ) => {
-                if !asc2.iter().all(|label| asc1.contains(label)) {
+                if !asc1.iter().all(|label| asc2.contains(label)) {
                     return Ok(false);
                 }
                 let mut ind = ind.clone();
