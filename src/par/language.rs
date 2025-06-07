@@ -475,7 +475,7 @@ impl Expression {
                     command: process::Command::Signal(
                         LocalName {
                             span,
-                            string: "empty".to_string(),
+                            string: "end".to_string(),
                         },
                         Arc::new(process::Process::Do {
                             span,
