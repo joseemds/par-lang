@@ -40,42 +40,42 @@ def Illegal =
 [Linearity](TODO) brings a lot of expressivity that wouldn't be possible otherwise. After all, the main
 purpose of _Par_ is to explore where this new paradigm arising from linear types and duality can take us.
 
-**Non-linear functions are a planned feature,** but in the meanwhile, the same can be achieved by a
-combination of [iterative](./iterative.md) and [choice](./choice.md) types. Here's an example, utilizing
-the full syntax of the language. If you're reading in this documentation in order, **come back here** after
-reading up on:
-- [Choice](./choice.md) types.
-- [Iterative](./iterative.md) types.
-- [Forall](./forall.md) types (generics).
-- [`do`-expressions](TODO).
-
-Or play with it regardless.
-
-```par
-type Mapper<a, b> = iterative choice {
-  .close    => !,
-  .apply(a) => (b) self,
-}
-
-dec MapList : [type a, b] [List<a>, Mapper<a, b>] List<b>
-def MapList = [type a, b] [list, mapper] list.begin.case {
-  .end! => do {
-    mapper.close
-  } in .end!,
-
-  .item(x) xs => do {
-    mapper.apply(x)[y]
-  } in .item(y) xs.loop
-}
-
-// Strings = *("1", "2", "3", "4", "5")
-def Strings =
-  let numbers: List<Int> = *(1, 2, 3, 4, 5)
-  in MapList(type Int, String)(numbers, begin case {
-    .close    => !,
-    .apply(n) => (Int.ToString(n)) loop,
-  })
-```
+> **Non-linear functions are a planned feature,** but in the meanwhile, the same can be achieved by a
+> combination of [iterative](./iterative.md) and [choice](./choice.md) types. Here's an example, utilizing
+> the full syntax of the language. If you're reading in this documentation in order, **come back here** after
+> reading up on:
+> - [Choice](./choice.md) types.
+> - [Iterative](./iterative.md) types.
+> - [Forall](./forall.md) types (generics).
+> - [`do`-expressions](TODO).
+> 
+> Or play with it regardless.
+> 
+> ```par
+> type Mapper<a, b> = iterative choice {
+>   .close    => !,
+>   .apply(a) => (b) self,
+> }
+> 
+> dec MapList : [type a, b] [List<a>, Mapper<a, b>] List<b>
+> def MapList = [type a, b] [list, mapper] list.begin.case {
+>   .end! => do {
+>     mapper.close
+>   } in .end!,
+> 
+>   .item(x) xs => do {
+>     mapper.apply(x)[y]
+>   } in .item(y) xs.loop
+> }
+> 
+> // Strings = *("1", "2", "3", "4", "5")
+> def Strings =
+>   let numbers: List<Int> = *(1, 2, 3, 4, 5)
+>   in MapList(type Int, String)(numbers, begin case {
+>     .close    => !,
+>     .apply(n) => (Int.ToString(n)) loop,
+>   })
+> ```
 
 ## Construction
 
@@ -123,25 +123,25 @@ def Identity = [x: String] x  // Okay.
 
 For **generic functions**, read up on [_forall_ types](./forall.md).
 
-**_Par_ has an unusual take on recursion,** thanks to its ambitious stride towards [totality](TODO).
-Naive recursion by self-reference is not allowed. In other words,
-**a function can't directly call itself.**
-
-```par
-def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
-```
-
-Instead, [recursive](./recursive.md) and [iterative](./iterative.md) types are used for recursion
-and [corecursion](https://en.wikipedia.org/wiki/Corecursion), respectively. Read up on them to learn
-more.
-
-Par's powerful `begin`/`loop` syntax is a single, universal construct for cyclic computations.
-It serves well in recursive functions, [iterative](./iterative.md) objects, and imperative-looking loops
-in [process syntax](../processes.md).
-
-Forbidding functions from calling themselves may seem limiting at first, but `begin`/`loop` makes up
-for it with its perky handling of local variables, and its ability to be used deep in expressions,
-removing any need for recursive helper functions.
+> **_Par_ has an unusual take on recursion,** thanks to its ambitious stride towards [totality](TODO).
+> Naive recursion by self-reference is not allowed. In other words,
+> **a function can't directly call itself.**
+> 
+> ```par
+> def Infinity = Int.Add(1, Infinity)  // Error! Cyclic dependency.
+> ```
+> 
+> Instead, [recursive](./recursive.md) and [iterative](./iterative.md) types are used for recursion
+> and [corecursion](https://en.wikipedia.org/wiki/Corecursion), respectively. Read up on them to learn
+> more.
+> 
+> Par's powerful `begin`/`loop` syntax is a single, universal construct for cyclic computations.
+> It serves well in recursive functions, [iterative](./iterative.md) objects, and imperative-looking loops
+> in [process syntax](../processes.md).
+> 
+> Forbidding functions from calling themselves may seem limiting at first, but `begin`/`loop` makes up
+> for it with its perky handling of local variables, and its ability to be used deep in expressions,
+> removing any need for recursive helper functions.
 
 ## Destruction
 
