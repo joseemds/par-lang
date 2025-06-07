@@ -22,8 +22,6 @@ type List<a> = recursive either {
 Each variant in an [`either`](./either.md) type has an obligatory payload. For the node marking the
 end of the list, the payload is empty, and so it's `!`.
 
-Unit is a [`Data`](TODO) type: variables of type `!` can be used multiple times and dropped at will.
-
 ## Construction
 
 The expression `!` has type `!` and is the only possible value for this type.
@@ -68,8 +66,3 @@ def Five =
   let pair = (2, 3)!
   in SumPair(pair)
 ```
-
-## Processes
-
-When interpreted as channels, `!` (and its dual: `?`, the [continuation](./continuation.md)) correspond
-to channels just about to close. Read about it in _[Closing Channels](../processes/closing.md)._

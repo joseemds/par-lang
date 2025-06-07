@@ -77,7 +77,7 @@ hljs.registerLanguage("par", function(hljs) {
           }, 
           {
               className: "type",
-              begin: /[A-Z][a-zA-Z0-9_]*/
+              begin: /\b[A-Z][a-zA-Z0-9_]*/
           },
           {
               className: "number",

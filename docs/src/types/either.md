@@ -61,8 +61,132 @@ type List<a> = recursive either {
 }
 ```
 
-An either type is [`Data`](TODO) if all of its payloads are `Data`. For example, `List<Int>` is `Data`,
-and therefore variables of type `List<Int>` can be used multiple times or left unused.
-
 ## Construction
 
+Values of _either types_ are constructed starting with `.name` — the name of one of the variants in
+the type — followed by an expression of the corresponding payload type.
+
+Here are some examples of constructions for an either type that demonstrates many possible payloads:
+
+```par
+type Varied = either {
+  .unit!,                        // payload is `!`
+  .string String,                // payload is `String`
+  .number Int,                   // payload is `Int`
+  .pair(Int) String,             // payload is `(Int) String`
+  .symmetricPair(Int, String)!,  // payload is `(Int, String)!`
+  .nested either {               // payload is another either type
+    .left!,
+    .right!,
+  },
+  .nested2(String) either {      // payload is a pair of `String` and another either
+    .left!,
+    .right!,
+  }
+}
+
+def Example1: Varied = .unit!
+def Example2: Varied = .string "Hello!"
+def Example3: Varied = .number 42
+def Example4: Varied = .pair(42) "Hello!"
+def Example5: Varied = .symmetricPair(42, "Hello!")!
+def Example6: Varied = .nested.left!
+def Example7: Varied = .nested.right!
+def Example8: Varied = .nested2("Hello!").left!
+def Example9: Varied = .nested2("Hello!").right!
+```
+
+[Pairs](./pair.md) are frequently used in payloads of either types, both in their symmetric and sequential
+styles. The sequential style makes chaining either types with attached payloads very natural, like
+in the `.nested2` variant.
+
+## Destruction
+
+Values of _either types_ can be deconstructed using `.case` expressions, similar to pattern-matching in
+other languages.
+
+A `.case` expression starts with the value to be destructed, followed by `.case`, and a list of
+comma-separated branches enclosed in curly braces, one per each variant.
+
+```par
+value.case {
+  // branches
+}
+```
+
+Each branch consists of the name of its variant, a _pattern_ to assign the payload to, then a `=>`
+followed by an expression computing the result for that branch. All branches must evaluate to the
+same type.
+
+```par
+// branch
+.name pattern => expression,
+```
+
+The [patterns](TODO) to assign the payloads are the same as can appear on the left side of
+`let` assignments:
+- `variable` matches the whole value.
+- `!` matches [units](./unit.md).
+- `(pattern1, ...) patternN` matches [pairs](./pair.md).
+
+For a small example, we analyze the `Str` and `Num` values of the `StringOrNumber` type from above:
+
+```par
+// evaluates to "Hello!"
+def ResultForStr = Str.case {
+  .string s => s,
+  .number n => Int.ToString(n),
+}
+
+// evaluates to "42"
+def ResultForNum = Num.case {
+  .string s => s,
+  .number n => Int.ToString(n),
+}
+```
+
+For a comprehensive example, here's a big [function](./function.md) converting the above `Varied` type
+to a `String`:
+
+```par
+dec VariedToString : [Varied] String
+def VariedToString = [varied] varied.case {
+  .unit! => ".unit!",
+
+  .string s => String.Builder.add(".string ").add(String.Quote(s)).build,
+
+  .number n => String.Builder.add(".number ").add(Int.ToString(n)).build,
+
+  .pair(n) s =>
+    String.Builder
+      .add(".pair(")
+      .add(Int.ToString(n))
+      .add(") ")
+      .add(String.Quote(s))
+      .build,
+
+  .symmetricPair(n, s)! =>
+    String.Builder
+      .add(".symmetricPair(")
+      .add(Int.ToString(n))
+      .add(", ")
+      .add(String.Quote(s))
+      .add(")!")
+      .build,
+
+  .nested inside => String.Builder.add(".nested").add(inside.case {
+    .left! => ".left!",
+    .right! => ".right!",
+  }).build,
+
+  .nested2(s) inside =>
+    String.Builder
+      .add(".nested2(")
+      .add(String.Quote(s))
+      .add(")")
+      .add(inside.case {
+        .left! => ".left!",
+        .right! => ".right!",
+      }).build,
+}
+```
