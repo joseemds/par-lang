@@ -313,6 +313,7 @@ impl Compiler {
     ) -> Result<(usize, Type)> {
         let id = self.id_to_package.len();
         let old_net = core::mem::take(&mut self.net);
+        let old_lazy_redexes = core::mem::take(&mut self.lazy_redexes);
         // Allocate package
         self.id_to_ty.push(Type::Break(Span::default()));
         self.id_to_package.push(Default::default());
@@ -342,12 +343,18 @@ impl Compiler {
         self.net.ports.push_back(tree.tree);
 
         self.net.packages = Arc::new(self.id_to_package.clone().into_iter().enumerate().collect());
-        self.net.assert_valid_with(
-            self.lazy_redexes
-                .iter()
-                .map(|(a, b)| [a, b].into_iter())
-                .flatten(),
-        );
+        // self.net.assert_valid_with(
+        //     self.lazy_redexes
+        //         .iter()
+        //         .map(|(a, b)| [a, b].into_iter())
+        //         .flatten(),
+        // );
+        // This is less efficient, but at least panics will now contain the lazy redexes
+        let mut net2 = self.net.clone();
+        net2.redexes
+            .append(&mut self.lazy_redexes.clone().into());
+        net2.assert_valid();
+
         self.net.normal();
         self.net
             .redexes
@@ -355,6 +362,7 @@ impl Compiler {
         self.net.assert_valid();
         *self.id_to_ty.get_mut(id).unwrap() = tree.ty.clone();
         *self.id_to_package.get_mut(id).unwrap() = core::mem::take(&mut self.net);
+        self.lazy_redexes = old_lazy_redexes;
         self.net = old_net;
 
         Ok((id, tree.ty))
